@@ -55,7 +55,7 @@ All of these tools do a great job of collecting specific files and artifacts fro
 
 These are the files that D2FAP will focus on parsing.  Once collected, and before a more substantial investigation that can take weeks gets underway (full disk forensics, detailed reporting) - making sense of all these immediately collected artifacts is essential to the response effort.  This is where D2FAP lives:
 
-#IMAGE INSERT
+![D2FAP Process](https://github.com/informalsecurity/D2FAP/blob/main/process.png?raw=true)
 
 During the collection of the logs, often times analysts are already making note of some kinds of indicators of compromise.  These are simple things like:
 
