@@ -1,0 +1,10 @@
+detection: Suspicious Download File Extension with Bits
+source: Event Logs
+id: 16403
+filename: Microsoft-Windows-Bits-Client
+tags: Execution,Tools
+category: Execution
+operator: any
+signatures:
+- .ps1
+- .exe

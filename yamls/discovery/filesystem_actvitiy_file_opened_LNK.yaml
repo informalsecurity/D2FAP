@@ -1,0 +1,10 @@
+detection: Filesystem Activity - File Opened LNK Created
+source: File System
+providerName: MFT
+filename: MFT
+tags: Discovery,Interactive,Hands on Keyboard
+category: Discovery
+operator: all
+signatures:
+- AppData\Roaming\Microsoft\Windows\Recent
+- .lnk

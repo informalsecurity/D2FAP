@@ -1,0 +1,10 @@
+detection: Powershell Windows Defender Disabled Attempt
+source: Event Logs
+id: "403,600,400,4100,4104"
+filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
+tags: Defender
+category: Defense Evasion
+operator: all
+signatures:
+- set-MpPreference
+- disable

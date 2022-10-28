@@ -1,0 +1,10 @@
+detection: EXE File Written in ProgramData Directory
+source: File System
+providerName: MFT
+filename: MFT
+tags: Credential Theft,Dropped to Disk,Hands on Keyboard
+category: Credential Theft
+operator: all
+signatures:
+- ProgramData
+- .exe

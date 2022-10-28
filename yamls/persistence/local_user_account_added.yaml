@@ -1,0 +1,10 @@
+detection: Local User Account Added 
+source: Event Logs
+id: "4688,1,3,7,10"
+filename: "Security.evtx,Microsoft-Windows-Sysmon"
+tags: Persistence
+category: Persistence
+operator: all
+signatures:
+- NET USER 
+- ADD

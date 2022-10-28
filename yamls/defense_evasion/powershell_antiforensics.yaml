@@ -1,0 +1,11 @@
+detection: Powershell Antiforensics Commands Detected
+source: Event Logs
+id: "403,600,400,4100,4104"
+filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
+tags: Defense Evasion,AntoForensics
+category: Defense Evasion
+operator: any
+signatures:
+- Remove-Item -Path 'HKCU:\Software\Microsoft\Terminal Server Client\servers'
+- Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Terminal Server Client\Default'
+- wevtutil cl 

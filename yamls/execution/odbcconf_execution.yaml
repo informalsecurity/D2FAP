@@ -1,0 +1,10 @@
+detection: Execution Technique - ODBCCONF REGSRV
+source: Event Logs
+id: "4688,1,3,7,10"
+filename: "Security.evtx, Microsoft-Windows-Sysmon"
+tags: Execution
+category: Execution
+operator: all
+signatures:
+- odbcconf.exe
+- REGSVR

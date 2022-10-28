@@ -1,0 +1,34 @@
+detection: Powershell Possible Hacking Tool Execution
+source: Event Logs
+id: "403,600,400,4100,4104"
+filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
+tags: malware,Hacking Tools,Mimikatz
+category: Execution
+operator: any
+signatures:
+- katz
+- PowerUp
+- DoIt
+- SharpHoun
+- ADRecon
+- mimi
+- AmsiBypass
+- PowerShellMafia
+- PowerSploit
+- nishang
+- Keylogger
+- GPPPass
+- Privesc
+- Hunter
+- Graeber
+- S3cur3Th1sSh1t
+- Inveigh
+- DSInternals
+- ADReplAccount
+- Snaffler
+- SharpShares
+- SauronEye
+- pwncat
+- MapExec
+- byt3bl33d3r
+- DeathStar

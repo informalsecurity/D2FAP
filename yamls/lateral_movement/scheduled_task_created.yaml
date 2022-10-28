@@ -1,0 +1,8 @@
+detection: SCheduled Task Created
+source: Event Logs
+id: 4698
+filename: System.evtx
+tags: Informational,Scheduled Task
+category: Informational
+operator: all
+signatures:

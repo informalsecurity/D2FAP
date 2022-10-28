@@ -1,0 +1,8 @@
+detection: Application Popup Detected
+source: Event Logs
+id: 26
+filename: System.evtx
+tags: Informational
+category: Informational
+operator: all
+signatures:

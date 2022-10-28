@@ -1,0 +1,10 @@
+detection: XLSM File Written in Temp Outlook Directory
+source: File System
+providerName: MFT
+filename: MFT
+tags: Initial Execution,Macros,Dropped to Disk,Email
+category: Execution
+operator: all
+signatures:
+- Content.Outlook
+- .xlsm

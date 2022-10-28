@@ -1,0 +1,10 @@
+detection: ZIP File Written in System32 Directory
+source: File System
+providerName: MFT
+filename: MFT
+tags: Credential Theft,Dropped to Disk,Hands on Keyboard
+category: Credential Theft
+operator: all
+signatures:
+- Windows\System32
+- .zip

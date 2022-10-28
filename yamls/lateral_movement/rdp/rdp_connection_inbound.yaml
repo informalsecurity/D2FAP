@@ -1,0 +1,8 @@
+detection: Remote Desktop - Inbound Connection
+source: Event Logs
+id: "21,24,25"
+filename: Microsoft-Windows-TerminalServices-LocalSessionManager
+tags: Lateral Movement,Initial Access,RDP
+category: Lateral Movement
+operator: all
+signatures:

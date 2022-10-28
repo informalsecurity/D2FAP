@@ -1,0 +1,15 @@
+detection: Powershell Discovery Command Detected
+source: Event Logs
+id: "403,600,400,4100,4104"
+filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
+tags: Discovery
+category: Discovery
+operator: any
+signatures:
+- net user
+- net group
+- dsquery server
+- nslookup
+- nltest
+- ping
+- portscan

@@ -1,0 +1,47 @@
+detection: Cred Dump Tools Dropped Files
+source: File System
+providerName: MFT
+filename: MFT
+tags: Credential Theft,Dropped to Disk,Hands on Keyboard
+category: Credential Theft
+operator: any
+signatures:
+- pwdump
+- kirbi
+- pwhashes
+- wce_ccache
+- wce_krbtkts
+- fgdump-log
+- test.pwd
+- lsremora64.dll
+- lsremora.dll
+- fgexec.exe
+- wceaux.dll
+- SAM.out
+- SECURITY.out
+- SYSTEM.out
+- NTDS.out
+- DumpExt.dll
+- DumpSvc.exe
+- cachedump64.exe
+- cachedump.exe
+- pstgdump.exe
+- servpw.exe
+- servpw64.exe
+- pwdump.exe
+- procdump64.exe
+- dumpert.dmp
+- hive_sam_
+- SAM-2021-
+- SAM-2022-
+- SAM-2023-
+- SAM-haxx
+- Sam.sav
+- sam.hive
+- ShadowSteal
+- Sam.export
+- sam.backup
+- sam.bck
+- .kirbi
+- mimilsa.log
+- ntds.cleartext

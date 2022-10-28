@@ -1,0 +1,8 @@
+detection: New Service Installed
+source: Event Logs
+id: "4697,7045"
+filename: System.evtx
+tags: Informational
+category: Informational
+operator: any
+signatures:

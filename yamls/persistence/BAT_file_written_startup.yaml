@@ -1,0 +1,10 @@
+detection: BAT File Written in Startup Directory
+source: File System
+providerName: MFT
+filename: MFT
+tags: Persistence,Dropped to Disk,Startup
+category: Persistence
+operator: all
+signatures:
+- Startup
+- .bat

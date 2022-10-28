@@ -1,0 +1,8 @@
+detection: Remote Desktop - Outbound Connection
+source: Event Logs
+id: 1024
+filename: Microsoft-Windows-TerminalServices-RDPClient
+tags: Lateral Movement,Initial Access,RDP
+category: Lateral Movement
+operator: all
+signatures:

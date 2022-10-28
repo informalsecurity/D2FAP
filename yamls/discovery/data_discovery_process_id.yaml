@@ -1,0 +1,11 @@
+detection: Data Discovery Tool Detected
+source: Event Logs
+id: "4688,1,3,7,10"
+filename: "Security.evtx, Microsoft-Windows-Sysmon,MFT"
+tags: Exfiltration
+category: Exfiltration
+operator: any
+signatures:
+- Snaffler
+- SharpShares
+- SauronEye

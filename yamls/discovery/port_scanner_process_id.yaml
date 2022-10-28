@@ -1,0 +1,13 @@
+detection: Port Scanning Tool Detected
+source: Event Logs
+id: "4688,1,3,7,10"
+filename: "Security.evtx, Microsoft-Windows-Sysmon,MFT"
+tags: Discovery,Scanner
+category: Discovery
+operator: any
+signatures:
+- advanced_port
+- ipscan
+- angry_ip
+- netscan
+- kport.exe

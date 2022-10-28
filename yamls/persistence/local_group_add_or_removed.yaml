@@ -1,0 +1,7 @@
+detection: Local Group Modified
+source: Event Logs
+id: "4732,4733"
+filename: "Security.evtx"
+tags: Persistence
+category: Persistence
+operator: any

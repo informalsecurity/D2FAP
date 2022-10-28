@@ -1,0 +1,10 @@
+detection: ScreenConnect Incoming Connection
+source: Event Logs
+id: 0
+filename: Application.evtx
+tags: Lateral Movement,ScreenConnect
+category: Lateral Movement
+providerName: ScreenConnect
+operator: all
+signatures:
+- Connected

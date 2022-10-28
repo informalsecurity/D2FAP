@@ -1,0 +1,8 @@
+detection: Application Installation
+source: Event Logs
+id: 11707
+filename: Application.evtx
+tags: Execution,App Install
+category: Execution
+operator: all
+signatures:

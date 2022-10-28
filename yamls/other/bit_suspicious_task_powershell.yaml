@@ -1,0 +1,9 @@
+detection: Bits Suspicious Task Added by Powershell
+source: Event Logs
+id: 3
+filename: Microsoft-Windows-Bits-Client
+tags: Execution,Tools
+category: Execution
+operator: any
+signatures:
+- powershell.exe
