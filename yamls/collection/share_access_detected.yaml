@@ -1,0 +1,8 @@
+detection: Share Access Detected
+source: Event Logs
+id: 5140
+filename: System.evtx
+tags: Informational,Share Access
+category: Informational
+operator: all
+signatures:
