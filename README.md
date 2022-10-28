@@ -1,5 +1,5 @@
 # D2FAP (Dean Dorton Forensic Artifact Parser)
-This is a simple Powershell script designed to aid in the triage portion of an incident response.  The idea is to automate the parsing of many commonly collected artifacts and provide some high level signatures to define events that may be of import to the event at hand.
+This is a simple PowerShell script designed to aid in the triage portion of an incident response.  The idea is to automate the parsing of many commonly collected artifacts and provide some high level signatures to define events that may be of import to the event at hand.
 
 In the digital forensics world, there are many great resources on operating system artifacts that can be used during an investigation.  
 There are also many great open-source tools that can be used to parse out the artifacts for review by an analyst.  
@@ -19,7 +19,7 @@ Creating a unified timeline to quickly and accurately understand the answers to 
 The goal of this tool is to provide a simple, easy to use script to help automate the use of many of these great tools, combine the results into a unified timeline, and apply some simple logic (detections) for the analyst to review and gain a better understanding of broad based malware attacks.  In our experience, we have used this tool to churn through 26 GB of artifacts from 22 systems in around 2 hours to produce a useful unified timeline.
 
 ## Requirements
-This tool runs only only PowerShell v5 and requires Administrative rights (Requirement of PowerForensics for parsing MFT).  On the backend - this tools utilizes many external tools to be able to perform the actual parsing of the data.  These tools include:
+This tool runs only on PowerShell v5 and requires Administrative rights (Requirement of PowerForensics for parsing MFT).  On the backend - this tools utilizes many external tools to be able to perform the actual parsing of the data.  These tools include:
 
 **PowerForensics** (https://github.com/Invoke-IR/PowerForensics) by Invoke-IR - PowerForensics provides an all in one platform for live disk forensic analysis
 
@@ -32,7 +32,7 @@ This tool runs only only PowerShell v5 and requires Administrative rights (Requi
 Each one of these tools will be checked for availability upon each run and either installed or downloaded (to a working folder of your choice).
 
 ## Process
-This tool is designed to aid in a very specific part of the overall response process.  Sepcifically - after initial containment - there is an opportunity to start to understand the scope of the incident.  Sometimes this can be done by looking through network firewall logs - but those arent available in all instances.  In many cases, responders need to rely on artifacts that reside on the disks of the attacked systems.
+This tool is designed to aid in a very specific part of the overall response process.  Specifically - after initial containment - there is an opportunity to start to understand the scope of the incident.  Sometimes this can be done by looking through network firewall logs - but those aren't available in all instances.  In many cases, responders need to rely on artifacts that reside on the disks of the attacked systems.
 
 In these cases, responders will use tools to collect data directly from the hosts before shutting them down.  There are many great tools that can be used in this part of the process:
 
@@ -48,7 +48,7 @@ All of these tools do a great job of collecting specific files and artifacts fro
 * USRJournal
 * AMCache
 * SRUMDB
-* Prefecth Files
+* Prefetch Files
 * Registry Hives, User Hives
 * Internet History Files
 * Windows Event Logs
@@ -74,7 +74,7 @@ The script will need to be executing under a PowerShell v5 with administrative r
 .\D2fap.ps1 -Config c:\Users\User\config.json
 ```
 
-If the script is run without the config paramter - the user will be prompted for each of the elements (incident suspected start, end times, known breached accounts, etc).
+If the script is run without the config parameter - the user will be prompted for each of the elements (incident suspected start, end times, known breached accounts, etc.).
 
 ### Config File
 D2FAP ships with an example config file to be filled out prior to execution.  Please note - this config has comments inline to explain each option - however - JSON does not support comments.  Do NOT include the comments in your config
@@ -111,7 +111,7 @@ INPUT_DATA_DIR - Make sure that you artifacts are organized into a directory of 
 
 ### YAML Signatures
 
-Highly influenced by the SIGMA signatures project (https://github.com/SigmaHQ/sigma) - the purpose of this is to provide a VERY simple signature format that can be applied to the artifacts we are parsing and some some high level intelligence to direct analysts input.  The eventual goal will be to directly support SIGMA - however the engine required to parse and apply the logic of the signatures was a little more complex (and strong/flexible) we were able to support at this time.
+Highly influenced by the SIGMA signatures project (https://github.com/SigmaHQ/sigma) - the purpose of this is to provide a VERY simple signature format that can be applied to the artifacts we are parsing and some high level intelligence (strings) to direct analysts input.  The eventual goal will be to directly support SIGMA - however the engine required to parse and apply the logic of the signatures was a little more complex (and strong/flexible) we were able to support at this time.
 
 ```
 detection: DOCM File Written in Temp Outlook Directory
@@ -129,18 +129,18 @@ signatures:
 
 **SOURCE** - Which artifact supported by signatured to parse (BrowserHistory, Event Logs, File System)
 
-**FILENAME** - Comma seperated strings to match filename to be parsed.  Security.evtx, MFT (for Master File Table).  For event logs, will match on partial file name.
+**FILENAME** - Comma separated strings to match filename to be parsed.  Security.evtx, MFT (for Master File Table).  For event logs, will match on partial file name.
 
 **TAGS** - Comma seperated list of TAG's to be applied to detected event
 
-**CATEGORY** - Comma seeated list of Kill Chain stage to be applied to the detected event
+**CATEGORY** - Comma separated list of Kill Chain stage to be applied to the detected event
 
-**OPERATOR** - ANY or ALL - Simple if any signautres need to match or all
+**OPERATOR** - ANY or ALL - Simple if any signatures need to match or all
 
 **SIGNATURES** - Any number of strings that need to be matched when parsing artifacts
 
 ## Output
-The script will output all files into a directory specified in the output_data_dir paramter of the config file.  Two directories will be created:
+The script will output all files into a directory specified in the output_data_dir parameter of the config file.  Two directories will be created:
 
 MFT - Each systems parsed MFT (within the incident range provided) will be output in this directory
 system_timelines - Each complete individual timeline (per system) will be output into this directory.
@@ -154,26 +154,26 @@ Additional files will be created that will include unified results:
 **file_system_shellbags.csv** - Shellbag events for all systems for the provided timeline.  This can be useful in the response process to understand what MAY have been viewed by a threat actor.
 
 ### Reviewing the Unified Timeline
-The unified timeline is meant to strip Gigabytes of data into a format easier to review.  That being said - some very useful features can be a bit noisy on the first pass through of analysis.  Using the filtering options for the 'Date' and 'Detection Type' columns can be extremly useful to aid in the analysis process.
+The unified timeline is meant to strip Gigabytes of data into a format easier to review.  That being said - some very useful features can be a bit noisy on the first pass through of analysis.  Using the filtering options for the 'Date' and 'Detection Type' columns can be extremely useful to aid in the analysis process.
 
-Additionaly, you can pay special attention to 'NOTEs' added to some detections that can be useful.
+Additionally, you can pay special attention to 'NOTEs' added to some detections that can be useful.
 
 **SUSPICIOUS HOURS** - Indicates events that occur after normal business hours - between 10 PM and 6 AM
 
 **COMPROMISED ACCOUNT** - Added to selected detections if the account name is one provided in the config input for known compromised accounts
 
 ### IMPORTANT NOTE - 
-This script should be considered only a BEST EFFORT attempt (not forensically sound) to quickly understand the scope of a broad based event.  Becuase something does not show up in the script does not mean it is not in the underlying artifact - a full forensic review should still be comepleted to fully understand the event.  However - this can be VERY useful to understanding the scope and impact of an incident in a timely manner to help direct initial response efforts.
+This script should be considered only a BEST EFFORT attempt (not forensically sound) to quickly understand the scope of a broad based event.  Because something does not show up in the script does not mean it is not in the underlying artifact - a full forensic review should still be completed to fully understand the event.  However - this can be VERY useful to understanding the scope and impact of an incident in a timely manner to help direct initial response efforts.
 
 ## Current Detections
 ### File System Detections
 
 ```
-- POSSIBLE Staging Area Observed - In some cases, threat actors may stage fileson the computers they are interacting with.  By reviewing the MFT and detecting directories where 100 or more files are created in a small time frame, we can observed potential staging areas to understand what threat actors have taken (even if they are deleted from disk - they may still be listed as orphaned objects in the MFT).
+- POSSIBLE Staging Area Observed - In some cases, threat actors may stage files on the computers they are interacting with.  By reviewing the MFT and detecting directories where 100 or more files are created in a small time frame, we can observed potential staging areas to understand what threat actors have taken (even if they are deleted from disk - they may still be listed as orphaned objects in the MFT).
 
 - Archive File Created - After staging files for exfiltration, threat actors may compress the files to save outbound bandwidth
 
-- Compromised Account Profile File Activity - Based upon the input known compropmised usernames - this lists file system activity related to the user profile path only of the compromised users.  This is based on a partial match - so a user "ADMIN" will also match the profile path "ADMINISTRATOR".
+- Compromised Account Profile File Activity - Based upon the input known compromised usernames - this lists file system activity related to the user profile path only of the compromised users.  This is based on a partial match - so a user "ADMIN" will also match the profile path "ADMINISTRATOR".
 
 - BINARY DROPPED in Compromised User Profile - Any time a executable file (detected by file extension according to the MFT) is dropped in the user profile path of input known compromised users.
 
@@ -181,7 +181,7 @@ This script should be considered only a BEST EFFORT attempt (not forensically so
 
 
 
-Detection Events that indicate interactive file access.....these will be wrapped up in a CSV report at the end to help understand the possible scope of identifiable ACCESSED/AQCUIRED (but not neccessarily exfiltrated) files the threat actor interacted with.  NOTE - just becuase something is NOT listed here - you can't assume it has not been accessed or aqcuired.  Absence of evidence is not evidence of confidentiality (as there are many ways to access.acquire files that will not leave evidence of access).
+Detection Events that indicate interactive file access.....these will be wrapped up in a CSV report at the end to help understand the possible scope of identifiable ACCESSED/AQCUIRED (but not necessarily exfiltrated) files the threat actor interacted with.  NOTE - just because something is NOT listed here - you can't assume it has not been accessed or acquired.  Absence of evidence is not evidence of confidentiality (as there are many ways to access/acquire files that will not leave evidence of access).
 
 - Open file or folder
 - Select file in open/save dialog-box
@@ -264,6 +264,6 @@ Powershell Encoded Command Execution
 ```
 
 ### Outbound RDP Events
-Any systems that display more than 1 outbound RDP event during the time frame of the attack will be listed at the end of script execution in a table.  The significance of this can be to help identify hosts the threat actors used as thier base of operations, and using RDP to move laterally to other systems.
+Any systems that display more than 1 outbound RDP event during the time frame of the attack will be listed at the end of script execution in a table.  The significance of this can be to help identify hosts the threat actors used as their base of operations, and using RDP to move laterally to other systems.
 
-These systems are VERY important from an analysis perspective to understand what the threat actor did, tools used, and possible exfiltration.  Additionally, the BMCCache on these hosts is important to anlyze as well and can provide useful information (such as in the case the threat actor uses private mode for browsing/exfil and you need to recover the URL).
+These systems are VERY important from an analysis perspective to understand what the threat actor did, tools used, and possible exfiltration.  Additionally, the BMCCache on these hosts is important to analyze as well and can provide useful information (such as in the case the threat actor uses private mode for browsing/exfil and you need to recover the URL).
