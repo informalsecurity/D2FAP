@@ -1,0 +1,16 @@
+{
+	'case_id':  'YYYY.MM-CLIENT_SHORT',
+	'company_short':  'SHORTNAME',
+	'analysis_type':  'strict',
+	'input_data_dir':  'E:\\vol\\volitile_data',
+	'output_data_dir': 'c:\\users\\USERNAME\\Desktop',
+	'incident_start_time': 'MM/DD/YYYY 00:00:01',
+	'incident_end_time': 'MM/DD/YYYY 23:59:59',
+	'compromised_accounts': 'administrator,bob',
+	'bad_files': 'netscan.exe,opera.exe',
+	'bad_ip_hostnames': '1.2.3.4,2.3.4.5,COMPUTERNAME',
+	'max_threads': '11',
+	'sleep_timer': '500',
+	'temp_directory': 'c:\\Temp',
+	'yaml_signature_directory': 'c:\\PATH\\TO\\yamls' 
+}
