@@ -1,4 +1,4 @@
-detection: SCheduled Task Created
+detection: Scheduled Task Created
 source: Event Logs
 id: 4698
 filename: System.evtx
