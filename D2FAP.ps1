@@ -7,13 +7,17 @@
         powershell D2FAP.ps1
     .Parameter Config
         JSON file with configuration options filled out
+    .Parameter HashIt
+        Performs hashing and deduplication of events (also ID's first event fires for a host) for post processeing - nice but can take time
     .Notes
         This does NOT help collect artifacts.  You should use a tool like KAPE, LRC, PowerForensics, OR Google Rapid Response Framework to collect artifacts.  They should then be assembled into a single directory, with subfolders named for each computer being analyzed.  The function of this script s to help automate the parsing of the collected artifacts into a unified timeline to help quickly triage malware events where lateral movemement is suspected (like a ransomware event).
 #>
 [CmdletBinding()]
 Param(
     [alias("C")]
-    $Config)
+    $Config,
+    [alias("H")]
+    $hashit)
 #Requires -RunAsAdministrator
 #Requires -Version 5.0
 
@@ -162,6 +166,7 @@ if ($global:user_out -eq "aaaa") {
 }
 $mftdir = $global:final_output + "\mft\"
 $systimeline = $global:final_output + "\system_timelines\"
+$scriptlog = $global:final_output + "\logfile.log"
 New-Item -Path $global:final_output -ItemType Directory | out-null
 New-Item -Path $mftdir -ItemType Directory | out-null
 New-Item -Path $systimeline -ItemType Directory | out-null
@@ -247,12 +252,37 @@ function systems_gathered() {
 }
 
 
+
 #This script block is what processes the artifacts for each system being investigated
 #This is initiated as a background PS Job - overall timeline is returned back to the main script to create the overall timeline of all systems
 $scriptBlock_process_host = {
-    param($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile)
-    $timezone = $null
+    param($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile,$scriptlog)
+    $ErrorActionPreference = 'SilentlyContinue'
+    #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - Starting Job " | Out-File $scriptlog -append
+    Function Test-IsFileLocked($locked_file) {
+        $Item = Convert-Path $locked_file
+        #Verify that this is a file and not a directory
+        If ([System.IO.File]::Exists($Item)) {
+            Try {
+                $FileStream = [System.IO.File]::Open($Item,'Open','Write')
+                $FileStream.Close()
+                $FileStream.Dispose()
+                $IsLocked = $False
+            } Catch [System.UnauthorizedAccessException] {
+                $IsLocked = 'AccessDenied'
+            } Catch {
+                $IsLocked = $True
+            }
+            return $IsLocked
+        }
+                     
+    }
+    $SleepTimer = 500
+    $systimeline = $global:final_output + "\system_timelines\"
+    $sys_time_fname = $systimeline + $ComputerName + ".csv"  
+    $timezone = "HAHA"
     #GET HOST TIME ZONE
+    "[$(Get-Date)] $ComputerName - BACKGROUND JOB START" | Out-File $scriptlog -append
     $eid =  "6013"
     $file = gci -path $folder.FullName -Filter 'System.evtx' -Recurse
     $temp_det = Get-WinEvent -FilterHashtable @{Path=$($file.FullName);ID=$eid} 
@@ -270,10 +300,13 @@ $scriptBlock_process_host = {
     		if($line.Value -like "*Pacific*"){
         		$timezone = 7
     		}
+            if($line.Value -like "*Coordinated Universal Time*"){
+        		$timezone = 0
+    		}
         }
     } 
 
-    if (!($timezone)) {
+    if ($timezone -eq "HAHA") {
         #DEFAULT TIME ZONE TO EST
         $timezone = 4
         $tz_files = gci -path $folder.FullName -Filter 'system_date_time_tz.txt' -Recurse
@@ -307,10 +340,13 @@ $scriptBlock_process_host = {
     if ($timezone -eq 7) {
     	$timezoneinfo = "Pacific Standard Time"
     }
+    if ($timezone -eq 0) {
+    	$timezoneinfo = "Coordinated Universal Time"
+    }
 
     #Initialize investigation variable
     $global:investigation = @()
-
+    "[$(Get-Date)] $ComputerName - BACKGROUND JOB - Timezone is $timezone " | Out-File $scriptlog -append
     #New YAML Engine
     #Simple Engine to pull YAML Rules and perform matching on different strings with simple any or all conditions
     $yamls = @()
@@ -325,7 +361,7 @@ $scriptBlock_process_host = {
     $output = @{}
     $output.add("detection","Known Bad File Name")
     $output.add("source","Event Logs")
-    $output.add("id","4688,1,3,7,10,21,24,25")
+    $output.add("id","4688,1,8,11,12,23,24,25")
     $output.add("category","Execution")
     $output.add("tags","Known Files")
     $output.add("operator","any")
@@ -342,7 +378,7 @@ $scriptBlock_process_host = {
     $output.add("source","Event Logs")
     $output.add("category","Lateral Movement")
     $output.add("tags","Compromised Accounts")
-    $output.add("id","4688,1,3,7,10,21,24,25")
+    $output.add("id","4688,1")
     $output.add("operator","any")
     $output.add("filename","Security.evtx,Microsoft-Windows-TerminalServices-RDPClient,icrosoft-Windows-TerminalServices-LocalSessionManager,Microsoft-Windows-Sysmon")
     $output.add("signatures",$faccount)
@@ -356,161 +392,251 @@ $scriptBlock_process_host = {
     $output.add("detection","Known Compromised Host")
     $output.add("source","Event Logs")
     $output.add("category","Lateral Movement")
-    $output.add("id","4688,1,3,7,10,21,24,25")
-    $output.add("tags","Compromised Accounts")
+    $output.add("id","4688,21,22,25")
+    $output.add("tags","Compromised Systems,C2,Malware Domains")
     $output.add("operator","any")
-    $output.add("filename","Security.evtx,Microsoft-Windows-TerminalServices-RDPClient,icrosoft-Windows-TerminalServices-LocalSessionManager,Microsoft-Windows-Sysmon")
+    $output.add("filename","Security.evtx,Microsoft-Windows-TerminalServices-RDPClient,icrosoft-Windows-TerminalServices-LocalSessionManager")
     $output.add("signatures",$fhosts)
     $yamls += $output
     $output = $null
     $event_logs = gci -r $folder.FullName *.evtx
     $yaml_investigation = @()
     foreach ($tfile in $event_logs) {
+        "[$(Get-Date)] $ComputerName - BACKGROUND JOB -  Starting $fname Analysis with YAML Engine" | Out-File $scriptlog -append
         $fname = $tfile.Name
+        #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - STarting $fname Analysis with YAML Engine" | Out-File $scriptlog -append
         #Write-Host "Searching: $fname"
+        #ARRAY To populate with YAMLs for FIle
         $yaml_evt = @()
         foreach ($yaml in $yamls) {
             $yevents = $yaml.filename -Split ","
-            foreach ($yamlname in $yevents.Trim()) {
-                
+            foreach ($yamlname in $yevents) {
+                $yamlname = $yamlname.Trim()
                 if (($fname -like "*$yamlname*") -and ($yamlname -ne "")) {
                     $yaml_evt += $yaml
                 }
             }
         }
-        $tfname = $tfile.FullName
         if ($yaml_evt.Count -ge 1) {
-            $ycount = $yaml_evt.Count
-            $yinit = 0
-            foreach ($signature in $yaml_evt) {
-                $yinit++
-                #Write-Host "Checking $yinit of $ycount signatures"
-                #get events to search
-                $det = $signature.detection
-                $hash = @{}
-                $hash.add("Path",$tfile.FullName)
-                $hash.add("StartTime",$global:StartIncidentTime)
-                $hash.add("EndTime",$global:EndIncidentTime)
-                $all = @()
+            $tfname = $tfile.FullName  
+            #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - $ycount YAML Signatures for for $fname " | Out-File $scriptlog -append    
+            $scriptBlock_process_yamlsig = {
+                    param($signature,$tfile,$folder,$global:StartIncidentTime,$global:EndIncidentTime,$sys_time_fname,$fname,$scriptlog)
+                    $ErrorActionPreference = 'SilentlyContinue'
+                    Function Test-IsFileLocked($locked_file) {
+                        $Item = Convert-Path $locked_file
+                        #Verify that this is a file and not a directory
+                        If ([System.IO.File]::Exists($Item)) {
+                            Try {
+                                $FileStream = [System.IO.File]::Open($Item,'Open','Write')
+                                $FileStream.Close()
+                                $FileStream.Dispose()
+                                $IsLocked = $False
+                            } Catch [System.UnauthorizedAccessException] {
+                                $IsLocked = 'AccessDenied'
+                            } Catch {
+                                $IsLocked = $True
+                            }
+                            return $IsLocked
+                        }
+                     
+                    }
                 
-                if ($signature.id) {
-                    if ($signature.id -like "*,*") {
-                        $id = $signature.id -Split ","
-                    } else {
-                        $id = $signature.id
-                    }
-                    $hash.add("ID",$id)
-                }
-                if ($signature.providerName) {
-                    $provider = $signature.providerName
-                    $hash.add("ProviderName",$provider)
-                }
-                $message = $signature.signatures
-                $tags = $signature.tags -Join [Environment]::NewLine
-                $all = Get-WinEvent -FilterHashtable $hash
-                if ($message.count -ge 1) {
-                    foreach ($match in $all) {
-                        $matched = @()
-                        $detected = ""
-                        foreach ($mess in ($message -split [Environment]::NewLine)) {
-                            $mess = $mess.Trim()
-                            $matched += $match.message -like "*$mess*"
-                            if (($match.message -like "*$mess*") -and ($mess -ne "")) {
-                                $detected = $mess
-                            }
-                        }
-                        if ($signature.operator -eq "all") {
-                            $matched = $matched | Sort-Object | Get-Unique
-                            if (($matched.Count -eq 1) -and ($matched -eq $true)) {
-                                $det = $signature.detection
-                                if ($detected -ne "") {
-                                    $det = $det + " - " + $detected.ToUpper()
-                                }
-                                $atime = [datetime]$match.TimeCreated
-                                if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
-        	                        $det = $det + " - SUSPICIOUS HOURS"
-                                }
-                                if ($global:accounts.Contains($match.UserId.ToUpper())) {
-                                    $det = $det + " - COMPROMISED ACCOUNT"
-                                }
-                                
-                                $output = New-Object -TypeName PSObject
-                                $output | add-member NoteProperty "Date" -value $match.TimeCreated
-                                $output | add-member NoteProperty "System" -value $match.MachineName
-                                $output | add-member NoteProperty "Detection Type" -value $det
-                                $output | add-member NoteProperty "Source" -value $fname
-                                $output | add-member NoteProperty "Notes" -value $match.message
-                                $output | add-member NoteProperty "Username" -value $match.UserId
-                                $output | add-member NoteProperty "Tags" -value $tags
-                                $output | add-member NoteProperty "Category" -value $signature.category
-                                $output | add-member NoteProperty "Include" -value ""
-                                $global:investigation += $output
-                            }
-                        } else {
-                            if ($matched.Contains($true)) {
-                                $det = $signature.detection
-                                if ($detected -ne "") {
-                                    $det = $det + " - " + $detected.ToUpper()
-                                }
-                                $atime = [datetime]$match.TimeCreated
-                                if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
-        	                        $det = $det + " - SUSPICIOUS HOURS"
-                                }
-                                if ($global:accounts.Contains($match.UserId.ToUpper())) {
-                                    $det = $det + " - COMPROMISED ACCOUNT"
-                                }
-                                $output = New-Object -TypeName PSObject
-                                $output | add-member NoteProperty "Date" -value $match.TimeCreated
-                                $output | add-member NoteProperty "System" -value $match.MachineName
-                                $output | add-member NoteProperty "Detection Type" -value $det
-                                $output | add-member NoteProperty "Source" -value $fname
-                                $output | add-member NoteProperty "Notes" -value $match.message
-                                $output | add-member NoteProperty "Username" -value $match.UserId
-                                $output | add-member NoteProperty "Tags" -value $tags
-                                $output | add-member NoteProperty "Category" -value $signature.category
-                                $output | add-member NoteProperty "Include" -value ""
-                                $global:investigation += $output
-            
-                            }
-                        }
-                    }
-                #NO Signature Matches Needed
-                } else {
-                    foreach ($match in $all) {
+                    $startday = $global:StartIncidentTime
+                    $endday = $global:StartIncidentTime.AddDays(1)
+                    do {
+                        #Write-Host "Checking $yinit of $ycount signatures"
+                        #get events to search
+
                         $det = $signature.detection
-                        $atime = [datetime]$match.TimeCreated
-                        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
-        	                $det = $det + " - SUSPICIOUS HOURS"
+                        #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - YAML Engine - $fname - $det starting $startday" | Out-File $scriptlog -append
+                        $hash = @{}
+                        $hash.add("Path",$tfile.FullName)
+                        $hash.add("StartTime",$startday)
+                        $hash.add("EndTime",$endday)
+                        if ($signature.id) {
+                            if ($signature.id -like "*,*") {
+                                $id = $signature.id -Split ","
+                            } else {
+                                $id = $signature.id
+                            }
+                            $hash.add("ID",$id)
                         }
-                        if ($global:accounts.Contains($match.UserId.ToUpper())) {
-                            $det = $det + " - COMPROMISED ACCOUNT"
+                        if ($signature.providerName) {
+                            $provider = $signature.providerName
+                            $hash.add("ProviderName",$provider)
                         }
-                        if (($match.ProviderName -eq "SentinelOne") -or ($match.ProviderName -eq "Symantec Endpoint Protection Client")) {
-                            $tmessage = $match.Properties.Value -Join [Environment]::NewLine 
+                        $message = $signature.signatures
+                        $tags = $signature.tags -Join [Environment]::NewLine
+                        $sig_count = $message.Count
+                        if ($sig_count -ne 0) {                                                                                                                                                                                                                                                                                                                                                                                                                                                                          if ($message.count -ge 1) {                
+                            if ($tfile.Name -like "*Sysmon*") {
+                                $temp = Get-WinEvent -FilterHashtable $hash | WHere-Object {$_.Properties.Value -match ( $message -join "|" )}
+                            } else {
+                                $temp = Get-WinEvent -FilterHashtable $hash | Where-Object {$_.message -match ( $message -join "|" )}
+                            }
+                            foreach ($match in $temp) {
+                                if ($match.Message -NotLike "*Advanced Threat Protection*") {
+                                    #Write-Host "Going Through Matches"
+                                    $matched = $true
+                                        if ($signature.operator -eq "all") {
+                                            #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - YAML Engine - $fname - $det Matched ALL condition" | Out-File $scriptlog -append
+                                            $counter = 0
+                                            Do {
+                                                foreach ($sig in $message) {
+                                                    $counter++
+                                                    if ($tfile.Name -like "*Sysmon*") {
+                                                        if (!($match.Properties.Value -like "*$sig*"))  {
+                                                            $matched = $false
+                                                        }
+                                                    } else {
+                                                        if (!($match.message -like "*$sig*"))  {
+                                                            $matched = $false
+                                                        }
+                                                    }
+                                                }
+
+                                            } while (($matched -eq $true) -and ($counter -le $sig_count))
+                                            if ($matched) {
+                                                #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - **YAML Engine** - $fname - $det getting added to timeline" | Out-File $scriptlog -append
+                                                $det = $signature.detection
+                                                $det = $det.ToUpper()                                     
+                                                $atime = [datetime]$match.TimeCreated.ToUniversalTime()
+                                                if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        	                                        $det = $det + " - SUSPICIOUS HOURS"
+                                                }
+                                                if ($tfile.Name -like "*Sysmon*") {
+                                                    $notes = $match.Properties.Value -Join [Environment]::NewLine
+                                                } else {
+                                                    $notes = $match.message
+                                                }
+                                                $output = New-Object -TypeName PSObject
+                                                $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                                $output | add-member NoteProperty "System" -value $match.MachineName
+                                                $output | add-member NoteProperty "Detection Type" -value $det
+                                                $output | add-member NoteProperty "Source" -value $fname
+                                                $output | add-member NoteProperty "Notes" -value $notes
+                                                $output | add-member NoteProperty "Username" -value $match.UserId
+                                                $output | add-member NoteProperty "Tags" -value $tags
+                                                $output | add-member NoteProperty "Category" -value $signature.category
+                                                $output | add-member NoteProperty "Include" -value ""
+                                                Do {
+                                                    Start-Sleep -Milliseconds 100
+                                                } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                                                $output | export-csv $sys_time_fname -NoTypeInformation -Append
+                                            } 
+                                        } else {
+                                            #Signature Matching is ANY
+                                            $det = $signature.detection
+                                            $det = $det.ToUpper()
+                                            #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - **YAML Engine** - $fname - $det matched ANY condition and getting added to timeline" | Out-File $scriptlog -append
+                                            foreach ($tmessage in $message) {
+                                                if ($tfile.Name -like "*Sysmon*") {
+                                                    if ($match.Properties.Value -like "*$tmessage*") {
+                                                        $det = $det + " - " +  $tmessage
+                                                    }
+                                                } else {
+                                                    if ($match.message -like "*$tmessage*") {
+                                                        $det = $det + " - " +  $tmessage
+                                                    }
+                                                }
+                                            }
+                                    
+                                            $atime = [datetime]$match.TimeCreated.ToUniversalTime()
+                                            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        	                                    $det = $det + " - SUSPICIOUS HOURS"
+                                            }
+                                            if ($tfile.Name -like "*Sysmon*") {
+                                                $notes = $match.Properties.Value -Join [Environment]::NewLine
+                                            } else {
+                                                $notes = $match.message
+                                            }
+                                            $output = New-Object -TypeName PSObject
+                                            $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                            $output | add-member NoteProperty "System" -value $match.MachineName
+                                            $output | add-member NoteProperty "Detection Type" -value $det
+                                            $output | add-member NoteProperty "Source" -value $fname
+                                            $output | add-member NoteProperty "Notes" -value $notes
+                                            $output | add-member NoteProperty "Username" -value $match.UserId
+                                            $output | add-member NoteProperty "Tags" -value $tags
+                                            $output | add-member NoteProperty "Category" -value $signature.category
+                                            $output | add-member NoteProperty "Include" -value ""
+                                            Do {
+                                                Start-Sleep -Milliseconds 100
+                                            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                                            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+                                        }
+                                    }
+                                }
+                            }
                         } else {
-                            $tmessage = $match.message
+                            #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - YAML Engine - $fname - $det matched only off event ID condition" | Out-File $scriptlog -append
+                            $temp = Get-WinEvent -FilterHashtable $hash
+                            foreach ($match in $temp) {
+                                if ($match.Message -NotLike "*Advanced Threat Protection*") {
+                                    $det = $signature.detection
+                                    #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - **YAML Engine** - $fname - $det matched EVENT ID condition and getting added to timeline" | Out-File $scriptlog -append
+                                    $atime = [datetime]$match.TimeCreated.ToUniversalTime()
+                                    if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        	                            $det = $det + " - SUSPICIOUS HOURS"
+                                    }
+                                    if (($match.ProviderName -eq "SentinelOne") -or ($match.ProviderName -eq "Symantec Endpoint Protection Client") -or ($tfile.Name -like "*Sysmon*")) {
+                                        $tmessage = $match.Properties.Value -Join [Environment]::NewLine 
+                                    } else {
+                                        $tmessage = $match.message
+                                    }
+                                    $output = New-Object -TypeName PSObject
+                                    $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                    $output | add-member NoteProperty "System" -value $match.MachineName
+                                    $output | add-member NoteProperty "Detection Type" -value $det
+                                    $output | add-member NoteProperty "Source" -value $fname
+                                    $output | add-member NoteProperty "Notes" -value $tmessage
+                                    $output | add-member NoteProperty "Username" -value $match.UserId
+                                    $output | add-member NoteProperty "Tags" -value $tags
+                                    $output | add-member NoteProperty "Category" -value $signature.category
+                                    $output | add-member NoteProperty "Include" -value ""
+                                    Do {
+                                        Start-Sleep -Milliseconds 100
+                                    } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                                    $output | export-csv $sys_time_fname -NoTypeInformation -Append
+                                    $tmessage = $null
+                                }
+                            }
                         }
-                        $output = New-Object -TypeName PSObject
-                        $output | add-member NoteProperty "Date" -value $match.TimeCreated
-                        $output | add-member NoteProperty "System" -value $match.MachineName
-                        $output | add-member NoteProperty "Detection Type" -value $det
-                        $output | add-member NoteProperty "Source" -value $fname
-                        $output | add-member NoteProperty "Notes" -value $tmessage
-                        $output | add-member NoteProperty "Username" -value $match.UserId
-                        $output | add-member NoteProperty "Tags" -value $tags
-                        $output | add-member NoteProperty "Category" -value $signature.category
-                        $output | add-member NoteProperty "Include" -value ""
-                        $global:investigation += $output
-                        $tmessage = $null
-                    }
-                }
+                        $temp = $null
+                        #[System.GC]::GetTotalMemory($true) | Out-Null
+                        $startday = $endday
+                        $endday = $endday.AddDays(1)
+                    
+                    } while($endday -le $global:EndIncidentTime)
             }
+
+            $MaxSigs = 5
+            foreach ($signature in $yaml_evt) { 
+                While ($(Get-Job -state running).count -ge $MaxSigs){
+                    Start-Sleep -Milliseconds $SleepTimer
+                }
+                Start-Job -ScriptBlock $scriptBlock_process_yamlsig -ArgumentList $($signature,$tfile,$folder,$global:StartIncidentTime,$global:EndIncidentTime,$sys_time_fname,$fname,$scriptlog) -Name $signature.Detection | Out-Null
+            }
+
+            While ($(Get-Job -State Running).count -gt 0){
+                Start-Sleep -Milliseconds $SleepTimer
+            }
+
+            Do {
+                Get-Job |Wait-Job | Receive-Job -Keep
+            }Until((Get-Job -State "Running").Count -eq 0)
+            #[System.GC]::GetTotalMemory($true) | Out-Null
+        
         }
     }
+    
+
     #MFT-ALL
+    "[$(Get-Date)] $ComputerName - MFT - Getting MFT-ALL" | Out-File $scriptlog -append
     $system = $ComputerName
     $mft_files = gci -path $folder.FullName -Filter '$MFT' -Recurse
-    $mft_start_time = ($global:StartIncidentTime).AddHours($timezone)
+    $mft_start_time = $global:StartIncidentTime
     $mft_all = @()
     foreach ($file in $mft_files) {
         $temp = $null
@@ -546,6 +672,7 @@ $scriptBlock_process_host = {
         $output = $null
         $temp = $null
     }
+    "[$(Get-Date)] $ComputerName - MFT - MFT-ALL COMPLETE" | Out-File $scriptlog -append
     #LAST ACTIVITY
     $last_activity_files = gci -path $folder.FullName -Filter LastActivityView.html -Recurse
     $sys_activity = @()
@@ -579,14 +706,16 @@ $scriptBlock_process_host = {
     $sys_activity  = $null
     $global:all_activity_incident = $global:all_activity | sort -Descending "Action Time"
     $global:all_activity  = $null
+    #[System.GC]::GetTotalMemory($true) | Out-Null
     #MFT Incident Timeline
+    "[$(Get-Date)] $ComputerName - MFT - Starting MFT Incident Timeline" | Out-File $scriptlog -append
     $global:mft_incident = @()
-    $start = ($global:StartIncidentTime).AddHours($timezone)
-    $end = ($global:EndIncidentTime).AddHours($timezone)
+    $start = $global:StartIncidentTime
+    $end = $global:EndIncidentTime
     $temp = $mft_all.mft | Where-Object {([datetime]$_.BornTime -ge $start) -and ([datetime]$_.BornTime -le $end)}
     $temp = $temp | Sort-Object -Property BornTime -Descending
     $output = New-Object -TypeName PSObject
-    $output | add-member NoteProperty "HostName" -value $system
+    $output | add-member NoteProperty "HostName" -value $ComputerName
     $output | add-member NoteProperty "mft" -value $temp
     $output | add-member NoteProperty "FileName" -value $mft_all.FileName
     $global:mft_incident += $output
@@ -594,54 +723,47 @@ $scriptBlock_process_host = {
     $global:mft_incident.mft | export-csv -Path $outputfile -NoTypeInformation
     $output = $null
     $temp = $null
+    "[$(Get-Date)] $ComputerName - MFT - MFT Incident Timeline Complete" | Out-File $scriptlog -append
+    #[System.GC]::GetTotalMemory($true) | Out-Null
     #MFT IOC
     $sysarray = @()
     $around = @()
     $global:list_files = @()
-    if ($global:type_of_analysis.ToUpper() -eq "FUZZY") {
-        foreach ($item in $global:mft_incident.mft) {
-            if (($global:fnames | Where-Object {$item.Name -like "*$_*"}).Count -gt 0){
-                $sysarray += $item
-                $tmpstart = ([datetime]$item.BornTime).AddMinutes(-1)
-                $tmpend = ([datetime]$item.BornTime).AddMinutes(1)
-                $around = $global:mft_incident.mft | Where-Object {($_.BornTime -ge $tmpstart) -and ($_.BornTime -le $tmpend)}
-                $sysarray += $around
-                $around = $null
-            }
+    "[$(Get-Date)] $ComputerName - MFT - Starting MFT Fuzzy Analysis" | Out-File $scriptlog -append
+    foreach ($item in $global:mft_incident.mft) {
+        if (($global:fnames | Where-Object {$item.Name -like "*$_*"}).Count -gt 0){
+            $sysarray += $item
+            $tmpstart = ([datetime]$item.BornTime).AddMinutes(-1)
+            $tmpend = ([datetime]$item.BornTime).AddMinutes(1)
+            $around = $global:mft_incident.mft | Where-Object {($_.BornTime -ge $tmpstart) -and ($_.BornTime -le $tmpend)}
+            $sysarray += $around
+            $around = $null
         }
     }
-    if ($global:type_of_analysis.ToUpper() -eq "STRICT") {
-        foreach ($item in $global:mft_incident.mft) {
-            if (($global:fnames.Contains($item.Name))){
-                $sysarray += $item
-                $tmpstart = ([datetime]$item.BornTime).AddMinutes(-1)
-                $tmpend = ([datetime]$item.BornTime).AddMinutes(1)
-                $around = $global:mft_incident.mft | Where-Object {($_.BornTime -ge $tmpstart) -and ($_.BornTime -le $tmpend)}
-                $sysarray += $around
-                $around = $null
-            }
-        }
-    }
+
 	$output = New-Object -TypeName PSObject
-    $output | add-member NoteProperty "HostName" -value $system
+    $output | add-member NoteProperty "HostName" -value $ComputerName
     $output | add-member NoteProperty "mft" -value $sysarray
     $global:list_files += $output
+    "[$(Get-Date)] $ComputerName - MFT - MFT Fuzzy/List_files Complete" | Out-File $scriptlog -append
     $sysarray = $null
     $output = $null
+    #[System.GC]::GetTotalMemory($true) | Out-Null
     #STAGING DETECTION
-    $hostname = $system  
+    "[$(Get-Date)] $ComputerName - MFT - Starting Staging Detection" | Out-File $scriptlog -append
+    $hostname = $ComputerName  
 	$staging = @()
-    $start = ($global:StartIncidentTime).AddHours($timezone)
-    $end = ($global:EndIncidentTime).AddHours($timezone)
+    $start = $global:StartIncidentTime
+    $end = $global:EndIncidentTime
     $temp2 = $global:mft_incident.mft | Where-Object {((([datetime]$_.BornTime -gt $start) -and ([datetime]$_.BornTime -lt $end))-and (($_.Name -Like "*.pdf*") -or ($_.Name -Like "*.doc*") -or ($_.Name -Like "*.xls*") -or ($_.Name -Like "*.jpg*") -or ($_.Name -Like "*.tif*")) -and (!($_.FullName -like "*\\AppData\\*")))}
     $findings = $temp2 | Select-Object @{Name="Hour";Expression={([datetime]$_.BornTime).Hour}},FullName,BornTime | Group-Object -Property Hour | Sort-object -Property Count -Descending
     $temp2 = $null
     foreach ($row in $findings) {
         if ($row.Count -ge 100) {
             $timestart = $row.Group.BornTime | Sort -Descending | Select -Last 1
-            $atime = ([datetime]$timestart).AddHours(-$timezone)
+            $atime = ([datetime]$timestart)
             $note = "[" + $row.Count + " Files Detected]"
-            if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	    $note = " SUSPICIOUS HOURS"
             }
             $temparr = @()
@@ -657,7 +779,7 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Detection Type" -value "POSSIBLE STAGING AREA OBSERVED $note"
             $output | add-member NoteProperty "Source" -value $global:mft_incident.FileName
             $output | add-member NoteProperty "Notes" -value ($temprow -Join [Environment]::NewLine )
-            $output | add-member NoteProperty "User" -value ($temparr -Join [Environment]::NewLine)
+            $output | add-member NoteProperty "Username" -value ($temparr -Join [Environment]::NewLine)
             $output | add-member NoteProperty "Tags" -value "Staging,Exfiltration,Data Access"
             $output | add-member NoteProperty "Category" -value "Impact"
             $output | add-member NoteProperty "Include" -value ""
@@ -667,7 +789,10 @@ $scriptBlock_process_host = {
         }
     }
     $findings = $null
+    "[$(Get-Date)] $ComputerName - MFT - Staging Detection Complete" | Out-File $scriptlog -append
+    #[System.GC]::GetTotalMemory($true) | Out-Null
     #Chrome History
+    "[$(Get-Date)] $ComputerName - Reviewing Chrome History" | Out-File $scriptlog -append
     $history = @()
     $tfolder = $folder.FullName
     $files = gci -File -r $tfolder | where {$_.name -like "History"}
@@ -708,7 +833,10 @@ $scriptBlock_process_host = {
                     $output | add-member NoteProperty "Tags" -value $yaml.tags
                     $output | add-member NoteProperty "Category" -value $yaml.category
                     $output | add-member NoteProperty "Include" -value ""
-                    $global:investigation += $output
+                    Do {
+                        Start-Sleep -Milliseconds 100
+                    } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                    $output | export-csv $sys_time_fname -NoTypeInformation -Append
                     $added = $true
                 }
             }
@@ -724,10 +852,15 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Web Browsing"
             $output | add-member NoteProperty "Category" -value "Informational"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - Chrome History Complete" | Out-File $scriptlog -append
     #IE/EDGE HISTORY
+    "[$(Get-Date)] $ComputerName - Starting Edge History" | Out-File $scriptlog -append
     $history = @()
     $tfolder = $folder.FullName
     $files = gci -File -r $tfolder | where {$_.name -like "WebCacheV01.dat"}
@@ -768,7 +901,10 @@ $scriptBlock_process_host = {
                     $output | add-member NoteProperty "Tags" -value $yaml.tags
                     $output | add-member NoteProperty "Category" -value $yaml.category
                     $output | add-member NoteProperty "Include" -value ""
-                    $global:investigation += $output
+                    Do {
+                        Start-Sleep -Milliseconds 100
+                    } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                    $output | export-csv $sys_time_fname -NoTypeInformation -Append
                     $added = $true
                 }
             }
@@ -784,10 +920,15 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Web Browsing"
             $output | add-member NoteProperty "Category" -value "Informational"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - Edge History Complete" | Out-File $scriptlog -append
     #FIREFOX HISTORY
+    "[$(Get-Date)] $ComputerName - Starting Firefox History" | Out-File $scriptlog -append
     $history = @()
     $tfolder = $folder.FullName
     $files = gci -File -r $tfolder | where {$_.name -like "places.sqlite"}
@@ -828,7 +969,10 @@ $scriptBlock_process_host = {
                     $output | add-member NoteProperty "Tags" -value $yaml.tags
                     $output | add-member NoteProperty "Category" -value $yaml.category
                     $output | add-member NoteProperty "Include" -value ""
-                    $global:investigation += $output
+                    Do {
+                        Start-Sleep -Milliseconds 100
+                    } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                    $output | export-csv $sys_time_fname -NoTypeInformation -Append
                     $added = $true
                 }
             }
@@ -844,10 +988,15 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Web Browsing"
             $output | add-member NoteProperty "Category" -value "Informational"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - Firefox History Complete" | Out-File $scriptlog -append
     #SHELLBAGS
+    "[$(Get-Date)] $ComputerName - Starting ShellBags" | Out-File $scriptlog -append
     $directory = $folder.FullName + "\LiveResponseData\CopiedFiles\registry"
     if (!(test-path -Path $directory)) {
         $directory = $folder.FullName + "\registry"
@@ -858,10 +1007,10 @@ $scriptBlock_process_host = {
             $newdatname = $datfiles.PSParentPath + "\\" + $username + "_NTUSER.DAT"
             Move-Item -Path $datfiles.FullName -Destination $newdatname | out-null
         }
-        $tfiles += gci -File -r $tfolder | where {$_.name -like "*NTUSER.DAT" -and $_.Length -gt 0}
-        $tfiles += gci -File -r $tfolder | where {$_.name -like "SAM" -and $_.Length -gt 0}
-        $tfiles += gci -File -r $tfolder | where {$_.name -like "SYSTEM" -and $_.Length -gt 0}
-        $tfiles += gci -File -r $tfolder | where {$_.name -like "SOFTWARE" -and $_.Length -gt 0}
+        $tfiles += gci -File -r $tfolder | where {$_.name -like "*NTUSER.DAT*" -and $_.Length -gt 0}
+        $tfiles += gci -File -r $tfolder | where {$_.name -like "SAM*" -and $_.Length -gt 0}
+        $tfiles += gci -File -r $tfolder | where {$_.name -like "SYSTEM*" -and $_.Length -gt 0}
+        $tfiles += gci -File -r $tfolder | where {$_.name -like "SOFTWARE*" -and $_.Length -gt 0}
         foreach ($file in $tfiles) {
             Copy-Item $file.FullName $directory
         }
@@ -877,7 +1026,7 @@ $scriptBlock_process_host = {
         if ((([DateTime]$thing.LastInteracted -gt $global:StartIncidentTime) -and ([DateTime]$thing.LastInteracted -lt $global:EndIncidentTime)) -OR (([DateTime]$thing.LastWriteTime -gt $global:StartIncidentTime) -and ([DateTime]$thing.LastWriteTime -lt $global:EndIncidentTime))) {
             $note = $null
             $atime = [datetime]$thing.LastWriteTime
-            if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	    $note = " SUSPICIOUS HOURS"
             }
             $output = New-Object -TypeName PSObject
@@ -890,26 +1039,31 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Data Access"
             $output | add-member NoteProperty "Category" -value "Collection"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - Shellbag Analysis Complete" | Out-File $scriptlog -append
     #HIVE FILES
+    "[$(Get-Date)] $ComputerName  - Starting HIVE File Analaysis" | Out-File $scriptlog -append
     $HIVE_FILES = gci -path $folder.FullName -Filter '*NTUSER.DAT' -Recurse
     foreach ($file in $HIVE_FILES) {
         $username = ($file.Name -Split "_")[0]
         try {
-            $userassist = Get-ForensicUserAssist -HivePath $file.FullName | Where-Object {(($_.LastExecutionTimeUtc.AddHours(-$timezone) -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc.AddHours(-$timezone) -lt $global:EndIncidentTime))}
+            $userassist = Get-ForensicUserAssist -HivePath $file.FullName | Where-Object {(($_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
         } catch {
             $tname = -Join (@('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','s','t','u','v','w','x','y','z','1','2','3','4','5','6','7','8','9','0','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z') | Get-Random -Count 12) 
             $dest = "C:\Temp\$tname.reg"
             copy-item $file.FullName $dest
-            $userassist = Get-ForensicUserAssist -HivePath $dest | Where-Object {(($_.LastExecutionTimeUtc.AddHours(-$timezone) -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc.AddHours(-$timezone) -lt $global:EndIncidentTime))}
+            $userassist = Get-ForensicUserAssist -HivePath $dest | Where-Object {(($_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
             Remove-Item $dest
         }
         foreach ($item in $userassist) {
             $note = $null
-            $atime = [datetime]$item.LastExecutionTimeUtc.AddHours(-$timezone)
-            if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+            $atime = [datetime]$item.LastExecutionTimeUtc
+            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	    $note = " SUSPICIOUS HOURS"
             }
             $output = New-Object -TypeName PSObject
@@ -922,31 +1076,38 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Program Execution"
             $output | add-member NoteProperty "Category" -value "Execution"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - HIVE FIle Analysis Complete" | Out-File $scriptlog -append
     #AMCACHE
+    "[$(Get-Date)] $ComputerName - AMCACHE Analysis Started" | Out-File $scriptlog -append
     $amfile = gci -path $folder.FullName -Filter '*Amcache.hve' -Recurse
+    $outputfile = $folder.FullName + "\amcache.csv"
     foreach ($file in $amfile) {
         try {
-            $amcache = Get-ForensicAmcache -HivePath $file.FullName | Where-Object {(($_.ModifiedTime2Utc.AddHours(-$timezone) -gt $global:StartIncidentTime) -and ($_.ModifiedTime2Utc.AddHours(-$timezone) -lt $global:EndIncidentTime))}
+            $amcache = Get-ForensicAmcache -HivePath $file.FullName | Where-Object {(($_.ModifiedTime2Utc -gt $global:StartIncidentTime) -and ($_.ModifiedTime2Utc -lt $global:EndIncidentTime))}
+            #c:\Temp\AmcacheParser.exe -f $file.FullName -i --csv $folder.FullName --csvf amcache.csv
         } catch {
             
             $tname = -Join (@('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','s','t','u','v','w','x','y','z','1','2','3','4','5','6','7','8','9','0','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z') | Get-Random -Count 12) 
             $dest = "C:\Temp\$tname.hve"
             copy-item $file.FullName $dest
-            $amcache = Get-ForensicAmcache -HivePath $dest | Where-Object {(([datetime]$_.ModifiedTime2Utc.AddHours(-($timezone)) -gt $global:StartIncidentTime) -and ([datetime]$_.ModifiedTime2Utc.AddHours(-($timezone)) -lt $global:EndIncidentTime))}
+            $amcache = Get-ForensicAmcache -HivePath $dest | Where-Object {(([datetime]$_.ModifiedTime2Utc -gt $global:StartIncidentTime) -and ([datetime]$_.ModifiedTime2Utc -lt $global:EndIncidentTime))}
             Remove-Item $dest
         }
         foreach ($item in $amcache) {
             $note = $null
-            $atime = [datetime]$item.ModifiedTime2Utc.AddHours(-$timezone)
-            if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+            $atime = [datetime]$item.ModifiedTime2Utc
+            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	    $note = " SUSPICIOUS HOURS"
             }
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $item.ModifiedTime2Utc.AddHours(-$timezone)
-            $output | add-member NoteProperty "System" -value $system
+            $output | add-member NoteProperty "Date" -value $item.ModifiedTime2Utc
+            $output | add-member NoteProperty "System" -value $ComputerName
             $output | add-member NoteProperty "Detection Type" -value "AMCACHE / PROGRAM RUN $note"
             $output | add-member NoteProperty "Source" -value $file.FullName
             $output | add-member NoteProperty "Notes" -value $item.Path
@@ -954,9 +1115,13 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Tags" -value "Informational,Program Execution"
             $output | add-member NoteProperty "Category" -value "Execution"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
+    "[$(Get-Date)] $ComputerName - AMCACHE Analysis Complete" | Out-File $scriptlog -append
     #GENERATE SYSTEM TIMELINE   
     #LAST ACTIVITY
     foreach ($event in $global:all_activity_incident) {
@@ -973,7 +1138,7 @@ $scriptBlock_process_host = {
         if ($include) {
             $note = $null
             $atime = [datetime]$event."Action Time"
-            if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
                 $note = " SUSPICIOUS HOURS"
             }
             $deets = $event -Join [Environment]::NewLine | Out-String
@@ -985,21 +1150,26 @@ $scriptBlock_process_host = {
             $output | add-member NoteProperty "Detection Type" -value $des
             $output | add-member NoteProperty "Source" -value "Last Activity Report - HTML" 
             $output | add-member NoteProperty "Notes" -value $deets
-            $output | add-member NoteProperty "User" -value "NA"
+            $output | add-member NoteProperty "Username" -value "NA"
             $output | add-member NoteProperty "Tags" -value "Informational"
             $output | add-member NoteProperty "Category" -value "Informational"
             $output | add-member NoteProperty "Include" -value ""
-            $global:investigation += $output
+            Do {
+                Start-Sleep -Milliseconds 100
+            } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
         }
     }
     $global:all_activity_incident = $null
+
     #STAGING
     $global:investigation += $global:staging 
     $global:staging = $null
     #MFT
+    "[$(Get-Date)] $ComputerName - MFT - Starting Compromised User and Compromised Binary and Exfil Activity Analysis" | Out-File $scriptlog -append
     $archive = @('.7z','.zip','.tar','.tar.gz')
-    $start = ($global:StartIncidentTime).AddHours($timezone)
-    $end = ($global:EndIncidentTime).AddHours($timezone)
+    $start = $global:StartIncidentTime
+    $end = $global:EndIncidentTime
     $comp_user_Activity = @()
     foreach ($user in $global:accounts) {
         $comp_user_Activity += $global:mft_incident.mft | Where-Object {(($_.FullName -like "*Users\$user*") -and (($_.FullName -notlike "*AppData\Local\Google\Chrome\User Data*") -and ($_.Name -notlike "*.etl") -and ($_.Name -notlike "*AppData\Local\Mozilla\Firefox\Profiles\*")))}
@@ -1008,7 +1178,9 @@ $scriptBlock_process_host = {
     foreach ($ext in $archive) {
         $exfil_file_Activity += $global:mft_incident.mft | Where-Object {$_.Name -like "*$ext"}
     }
+    "[$(Get-Date)] $ComputerName - MFT - Compromised User and Compromised Binary and Exfil Activity Analysis Complete" | Out-File $scriptlog -append
     #YAML ENgine for MFT
+    "[$(Get-Date)] $ComputerName - MFT -Starting YAML Engine" | Out-File $scriptlog -append
     $yaml_evt = @()
     $interesting_fs_actvity = @()
     foreach ($yaml in $yamls) {
@@ -1028,9 +1200,9 @@ $scriptBlock_process_host = {
                 $interesting_fs_actvity += $global:mft_incident.mft | Where-Object {$_.FullName -like "*$signature*"}
                 foreach ($entry in $interesting_fs_actvity) {
     	            $output = New-Object -TypeName PSObject
-                    $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+                    $atime = [datetime]$entry."BornTime"
                     $note = $null
-                    if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+                    if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	            $note = " SUSPICIOUS HOURS"
                     }
                     if ($note -ne $null) {
@@ -1043,12 +1215,21 @@ $scriptBlock_process_host = {
                     $output | add-member NoteProperty "Detection Type" -value $dtype
                     $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
                     $output | add-member NoteProperty "Notes" -value $entry.FullName
-                    $output | add-member NoteProperty "User" -value "NA"
+                    $output | add-member NoteProperty "Username" -value "NA"
                     $output | add-member NoteProperty "Tags" -value $yaml.tags
                     $output | add-member NoteProperty "Category" -value $yaml.category
                     $output | add-member NoteProperty "Include" -value ""
-                    $global:investigation += $output
+                    Do {
+                        Start-Sleep -Milliseconds 100
+                    } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                    try {
+                        $output | export-csv $sys_time_fname -NoTypeInformation -Append
+                    } catch {
+                        "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for $dtype written to $sys_time_fname" | Out-File $scriptlog -append
+                    }
                 }
+                $tcount = $interesting_fs_actvity.Count
+                "[$(Get-Date)] $ComputerName - MFT - YAML Engine Complete for $dtype with $tcount matches written  written to $sys_time_fname" | Out-File $scriptlog -append
                 $interesting_fs_actvity = @()
             }
         }
@@ -1061,9 +1242,9 @@ $scriptBlock_process_host = {
             }
             foreach ($entry in $temp_is_fs_activity) {
     	        $output = New-Object -TypeName PSObject
-                $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+                $atime = [datetime]$entry."BornTime"
                 $note = $null
-                if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+                if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	        $note = " SUSPICIOUS HOURS"
                 }
                 if ($note -ne $null) {
@@ -1076,22 +1257,36 @@ $scriptBlock_process_host = {
                 $output | add-member NoteProperty "Detection Type" -value $dtype
                 $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
                 $output | add-member NoteProperty "Notes" -value $entry.FullName
-                $output | add-member NoteProperty "User" -value "NA"
+                $output | add-member NoteProperty "Username" -value "NA"
                 $output | add-member NoteProperty "Tags" -value $yaml.tags
                 $output | add-member NoteProperty "Category" -value $yaml.category
                 $output | add-member NoteProperty "Include" -value ""
-                $global:investigation += $output
+                Do {
+                    Start-Sleep -Milliseconds 100
+                } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+                try {
+                    $output | export-csv $sys_time_fname -NoTypeInformation -Append
+                } catch {
+                    "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for $dtype written to $sys_time_fname" | Out-File $scriptlog -append
+                }
             }
+            $tcount = $temp_is_fs_activity.Count
+            "[$(Get-Date)] $ComputerName - MFT - YAML Engine Complete for $dtype with $tcount matches written to $sys_time_fname" | Out-File $scriptlog -append
             $temp_is_fs_activity = $null
             
         }
     }
+    "[$(Get-Date)] $ComputerName - MFT - YAML Engine Complete" | Out-File $scriptlog -append
+    "[$(Get-Date)] $ComputerName - MFT -Starting Bloodhound Output Engine" | Out-File $scriptlog -append
     $bh_fs_actvity = $global:mft_incident.mft | Where-Object {(($_.FullName -like "*_ous.json") -or ($_.FullName -like "*_users.json") -or ($_.FullName -like "*_computers.json") -or ($_.FullName -like "*_domains.json") -or ($_.FullName -like "*_gpos.json"))}
+    "[$(Get-Date)] $ComputerName - MFT - Bloodhound Output Engine Complete" | Out-File $scriptlog -append
+    $tcount = 0
     foreach ($entry in $bh_fs_actvity) {
+        $tcount++
     	$output = New-Object -TypeName PSObject
-        $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+        $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	$note = " SUSPICIOUS HOURS"
         }
         $output | add-member NoteProperty "Date" -value $atime
@@ -1099,17 +1294,27 @@ $scriptBlock_process_host = {
         $output | add-member NoteProperty "Detection Type" -value "POSSIBLE BLOODHOUND OUTPUT DETECTED - $note"
         $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
         $output | add-member NoteProperty "Notes" -value $entry.FullName
-        $output | add-member NoteProperty "User" -value "NA"
+        $output | add-member NoteProperty "Username" -value "NA"
         $output | add-member NoteProperty "Tags" -value "Informational,Collection,Archive"
         $output | add-member NoteProperty "Category" -value "Collection"
         $output | add-member NoteProperty "Include" -value ""
-        $global:investigation += $output
+        Do {
+            Start-Sleep -Milliseconds 100
+        } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+        try {
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+        } catch {
+            "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for Bloodhound Activity written to $sys_time_fname" | Out-File $scriptlog -append
+        }
     }
+    "[$(Get-Date)] $ComputerName - MFT - Bloodhound Output Engine Complete with $tcount matches written to $sys_time_fname" | Out-File $scriptlog -append
+    $tcount = 0
     foreach ($entry in $exfil_file_Activity) {
+        $tcount++
     	$output = New-Object -TypeName PSObject
-        $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+        $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	$note = " SUSPICIOUS HOURS"
         }
         $output | add-member NoteProperty "Date" -value $atime
@@ -1117,17 +1322,27 @@ $scriptBlock_process_host = {
         $output | add-member NoteProperty "Detection Type" -value "POSSIBLE STAGING/EXFIL - Archive File Created $note"
         $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
         $output | add-member NoteProperty "Notes" -value $entry.FullName
-        $output | add-member NoteProperty "User" -value "NA"
+        $output | add-member NoteProperty "Username" -value "NA"
         $output | add-member NoteProperty "Tags" -value "Informational,Collection,Archive"
         $output | add-member NoteProperty "Category" -value "Collection"
         $output | add-member NoteProperty "Include" -value ""
-        $global:investigation += $output
+        Do {
+            Start-Sleep -Milliseconds 100
+        } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+        try {
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+        } catch {
+            "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for EXFIL ACTIVITY written to $sys_time_fname" | Out-File $scriptlog -append
+        }
     }
+    "[$(Get-Date)] $ComputerName - MFT - Exfil Engine Complete with $tcount matches written to $sys_time_fname" | Out-File $scriptlog -append
+    $tcount = 0
     foreach ($entry in $comp_user_Activity) {
+        $tcount++
         $output = New-Object -TypeName PSObject
-        $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+        $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	$note = " SUSPICIOUS HOURS"
         }
         $output | add-member NoteProperty "Date" -value $atime
@@ -1135,17 +1350,25 @@ $scriptBlock_process_host = {
         $output | add-member NoteProperty "Detection Type" -value "Compromised Account Profile File Activity $note"
         $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
         $output | add-member NoteProperty "Notes" -value $entry.FullName
-        $output | add-member NoteProperty "User" -value "NA"
+        $output | add-member NoteProperty "Username" -value "NA"
         $output | add-member NoteProperty "Tags" -value "Informational"
         $output | add-member NoteProperty "Category" -value "Informational"
         $output | add-member NoteProperty "Include" -value ""
-        $global:investigation += $output
+        Do {
+            Start-Sleep -Milliseconds 100
+        } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+        try {
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+        } catch {
+            "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for Compromised User Activity written to $sys_time_fname" | Out-File $scriptlog -append
+        }
     }
+    "[$(Get-Date)] $ComputerName - MFT - Comp User Engine Complete with $tcount matches written to $sys_time_fname" | Out-File $scriptlog -append
     foreach ($entry in $comp_user_bin) {
         $output = New-Object -TypeName PSObject
-        $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+        $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	$note = " SUSPICIOUS HOURS"
         }
         $output | add-member NoteProperty "Date" -value $atime
@@ -1153,16 +1376,23 @@ $scriptBlock_process_host = {
         $output | add-member NoteProperty "Detection Type" -value "BINARY DROPPED in Compromised User Profile $note"
         $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
         $output | add-member NoteProperty "Notes" -value $entry.FullName
-        $output | add-member NoteProperty "User" -value "NA"
+        $output | add-member NoteProperty "Username" -value "NA"
         $output | add-member NoteProperty "Tags" -value "Informational"
         $output | add-member NoteProperty "Category" -value "Informational"
         $output | add-member NoteProperty "Include" -value ""
-        $global:investigation += $output
+        Do {
+            Start-Sleep -Milliseconds 100
+        } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+        try {
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+        } catch {
+            "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for Compromised Binary Activity written to $sys_time_fname" | Out-File $scriptlog -append
+        }
     }
     foreach ($entry in $global:list_files.mft) {
-        $atime = ([datetime]$entry."BornTime").AddHours(-$timezone)
+        $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 6) -or ($atime.hour -gt 22)) {
+        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
         	$note = " SUSPICIOUS HOURS"
         }
         if ($global:fnames.Contains($entry.Name.ToUpper())) {
@@ -1176,21 +1406,23 @@ $scriptBlock_process_host = {
         $output | add-member NoteProperty "Detection Type" -value $dtype 
         $output | add-member NoteProperty "Source" -value ($global:mft_incident.FileName -Replace " ","")
         $output | add-member NoteProperty "Notes" -value $entry.FullName
-        $output | add-member NoteProperty "User" -value "NA"
+        $output | add-member NoteProperty "Username" -value "NA"
         $output | add-member NoteProperty "Tags" -value "Informational"
         $output | add-member NoteProperty "Category" -value "Informational"
         $output | add-member NoteProperty "Include" -value ""
-        $global:investigation += $output
+        Do {
+            Start-Sleep -Milliseconds 100
+        } while ((Test-IsFileLocked($sys_time_fname)) -eq $true)
+        try {
+            $output | export-csv $sys_time_fname -NoTypeInformation -Append
+        } catch {
+            "[$(Get-Date)] ERROR !!!! $ComputerName - MFT - YAML Engine Complete for Interesting File System Activity written to $sys_time_fname" | Out-File $scriptlog -append
+        }
     }
     $global:mft_incident = $null
     $comp_file_Activity = $null
     $cfa = $null
-    
-    $global:investigation = $global:investigation | Sort -Descending Date
-    $systimeline = $global:final_output + "\system_timelines\"
-    $fname = $systimeline + $ComputerName + ".csv"  
-    $global:investigation | export-csv $fname -NoTypeInformation
-    $global:investigation = $null
+    #[System.GC]::GetTotalMemory($true) | Out-Null
     DisMount-DiskImage -ImagePath $vfile.FullName
 }
 
@@ -1355,13 +1587,13 @@ if ((gci $global:base_path -Recurse *.vhdx).Count -eq 0) {
 #SET OR RESET Incident Start Time - IF YOU DO THIS - you will need to rerun all the areas in the import section for the new times to take affect
 if ($global_config.incident_start_time -ne '') {
     $global:StartIncidentTime = $global_config.incident_start_time
-    $global:StartIncidentTime = (Get-Date $global:StartIncidentTime)
+    $global:StartIncidentTime = (Get-Date $global:StartIncidentTime).ToUniversalTime()
 } else {
     incident_start_time
 }
 if ($global_config.incident_end_time -ne '') {
     $global:EndIncidentTime = $global_config.incident_end_time
-    $global:EndIncidentTime = (Get-Date $global:EndIncidentTime)
+    $global:EndIncidentTime = (Get-Date $global:EndIncidentTime).ToUniversalTime()
 } else {
     incident_end_time
 }
@@ -1409,7 +1641,7 @@ if ($global:vhdx.Count -eq 0){
         #"Starting job - $Computer"
         $i++
         $vfile = ""
-        Start-Job -ScriptBlock $scriptBlock_process_host -ArgumentList $($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile) -Name $ComputerName | Out-Null
+        Start-Job -ScriptBlock $scriptBlock_process_host -ArgumentList $($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile,$scriptlog) -Name $ComputerName | Out-Null
         Write-Progress  -Activity "Parsing Artifact Data" -Status "Starting Threads" -CurrentOperation "$i threads created - $($(Get-Job -state running).count) threads open" -PercentComplete ($i / $global:systems_count * 100)
     }
 } else {
@@ -1429,7 +1661,7 @@ if ($global:vhdx.Count -eq 0){
         }
         #"Starting job - $Computer"
         $i++
-        Start-Job -ScriptBlock $scriptBlock_process_host -ArgumentList $($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile) -Name $ComputerName | Out-Null
+        Start-Job -ScriptBlock $scriptBlock_process_host -ArgumentList $($folder,$global:StartIncidentTime,$global:EndIncidentTime,$ComputerName,$global:fnames,$global:accounts,$global:type_of_analysis,$global:comp_hosts,$yaml_path,$global:final_output,$vfile,$scriptlog) -Name $ComputerName | Out-Null
         Write-Progress  -Activity "Parsing Artifact Data" -Status "Starting Threads" -CurrentOperation "$i threads created - $($(Get-Job -state running).count) threads open" -PercentComplete ($i / $global:systems_count * 100)
     }
 }
@@ -1447,7 +1679,7 @@ While ($(Get-Job -State Running).count -gt 0){
 }
 
 "Reading all jobs"
-$the_final_countdown = @()
+
 $Complete = Get-date
 Write-Host "## Reading All Jobs - " $Complete
 Do {
@@ -1455,10 +1687,75 @@ Do {
     $temp = Get-Job |Wait-Job | Receive-Job -Keep
 }Until((Get-Job -State "Running").Count -eq 0)
 
-
-foreach ($file in (gci $systimeline)) {
-    $the_final_countdown += Import-Csv $file.FullName
-}
+$the_final_countdown = @()
+if ($hashit) {
+    if ($hashit.ToLower() -eq "true") {
+        foreach ($file in (gci $systimeline)) {
+            $file = IMport-Csv -Path $file.FullName
+            $file = $file | sort-object -Property Date -Descending
+            foreach ($item in $file) {
+                if ($item.Notes -Notlike "*Advanced Threat Protection*") {
+                    $stringAsStream = [System.IO.MemoryStream]::new()
+                    $tstring = "$item.Date" + "$item.System" + "$item.Source" + "$item.Note"
+                    $writer = [System.IO.StreamWriter]::new($stringAsStream)
+                    $writer.write($tstring)
+                    $writer.Flush()
+                    $tstring = $null
+                    $stringAsStream.Position = 0
+                    $EventHash = Get-FileHash -InputStream $stringAsStream | Select-Object Hash
+                    $stringAsStream = $null
+                    $writer.Close | out-null
+            
+                    if (!($EventHash -in $the_final_countdown.ID)) {
+                        $stringAsStream = [System.IO.MemoryStream]::new()
+                        $writer = [System.IO.StreamWriter]::new($stringAsStream)
+                        $tstring = $item.System + $item.Source + $item."Detection Type" + $item.User
+                        $writer.write($tstring)
+                        $writer.Flush()
+                        $stringAsStream.Position = 0
+                        $FirstHash = Get-FileHash -InputStream $stringAsStream | Select-Object Hash
+                        $stringAsStream = $null
+                        $writer.Close | out-null
+                        $FirstTimer = $null
+                        if (!($FirstHash.Hash -in $the_final_countdown.FHash)) {
+                            $FirstTimer = "Yes"
+                        } else {
+                            $FirstTimer = "No"
+                        }
+                        $output = New-Object -TypeName PSObject
+                        $output | add-member NoteProperty "ID" -value $EventHash.Hash
+                        $output | add-member NoteProperty "Date" -value $item.Date
+                        $output | add-member NoteProperty "System" -value $item.System
+                        $output | add-member NoteProperty "Detection Type" -value $item."Detection Type"
+                        $output | add-member NoteProperty "Source" -value $item.Source
+                        $output | add-member NoteProperty "Notes" -value $item.Notes
+                        $output | add-member NoteProperty "Username" -value $item.Username
+                        $output | add-member NoteProperty "Tags" -value $item.Tags
+                        $output | add-member NoteProperty "Category" -value $item.Category
+                        $output | add-member NoteProperty "Include" -value $item.Include
+                        $output | add-member NoteProperty "FHash" -value $FirstHash.Hash
+                        $output | add-member NoteProperty "FirstSigHost" -value $FirstTimer
+                        $the_final_countdown += $output
+                        #[System.GC]::GetTotalMemory($true) | Out-Null
+                    }
+            
+                }
+            }
+        }
+    } else {
+        foreach ($file in (gci $systimeline)) {
+            $temp = $null
+            $temp = Import-Csv $file.FullName
+            $the_final_countdown += $temp
+        }
+    }
+} else {
+        foreach ($file in (gci $systimeline)) {
+            $temp = $null
+            $temp = Import-Csv $file.FullName
+            $the_final_countdown += $temp
+        }
+    }
 #POST PROCESSING / REPORTING
 $global:files_opened = $the_final_countdown  | Where-Object {($_."Detection Type" -like "*Open file or folder*") -or ($_."Detection Type" -like "*Select file in open/save dialog-box*") -or ($_."Detection Type" -like "*View Folder in Explorer*") -or ($_."Detection Type" -like "*SHELLBAG*") -or ($_."Detection Type" -like "*File Opened LNK Created*") }
 $shellbags = "$global:final_output\file_system_actvity.csv"
