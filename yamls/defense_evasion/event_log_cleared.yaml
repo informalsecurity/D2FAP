@@ -1,0 +1,8 @@
+detection: Windows Event Log Cleared
+source: Event Logs
+id: "104,1102"
+filename: "System.evtx"
+tags: antiforensics,evasion
+category: Defense Evasion
+operator: any
+signatures:
