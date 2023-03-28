@@ -6,5 +6,9 @@ tags: Discovery,Interactive,Hands on Keyboard
 category: Discovery
 operator: all
 signatures:
-- AppData\Roaming\Microsoft\Windows\Recent
+- AppData
+- Roaming
+- Microsoft
+- Windows
+- Recent
 - .lnk

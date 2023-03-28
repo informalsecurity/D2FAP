@@ -1,7 +1,7 @@
 detection: Powershell Discovery Command Detected
 source: Event Logs
-id: "403,600,400,4100,4104"
-filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
+id: "403,600,400,4100,4104,4688,1,8,11,23"
+filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell,Security.evtx, Microsoft-Windows-Sysmon"
 tags: Discovery
 category: Discovery
 operator: any
