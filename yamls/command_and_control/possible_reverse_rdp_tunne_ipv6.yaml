@@ -1,0 +1,10 @@
+detection: RDP Termsvcs Loopback Detection 127.0.0.1 - Possible Reverse Tunnel
+source: Event Logs
+id: "5156"
+filename: "Security.evtx"
+tags: Remote Access
+category: Command and Control
+operator: all
+signatures:
+- ::1
+- 3389
