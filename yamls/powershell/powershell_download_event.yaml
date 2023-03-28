@@ -1,9 +1,14 @@
-detection: Powershell - Possible Mimikatz Execution Attempt
+detection: Powershell Download Event
 source: Event Logs
 id: "403,600,400,4100,4104"
-filename: "Windows PowerShell.evtx,Microsoft-Windows-PowerShell"
-tags: malware,Hacking Tools,Mimikatz
-category: Credential Theft
-operator: all
+filename: "Windows PowerShell,Microsoft-Windows-PowerShell"
+tags: malware,Stager,Loader,Download
+category: Execution
+operator: any
 signatures:
-- katz
+- net.webclient
+- downloadstring
+- wget
+- curl
+- http
+- iwr
