@@ -1,0 +1,8 @@
+detection: Execution Technique - Service Terminated Unexpectedly
+source: Event Logs
+id: "7034"
+filename: "Security.Evtx"
+tags: Execution,Cobalt Strike
+category: Execution
+operator: any
+signatures:

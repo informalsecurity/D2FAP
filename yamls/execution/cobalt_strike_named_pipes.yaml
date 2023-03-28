@@ -1,0 +1,22 @@
+detection: Execution Technique - Cobalt Strike Named Pipes
+source: Event Logs
+id: "4688,17,18"
+filename: "Security.evtx, Microsoft-Windows-Sysmon"
+tags: Execution,Cobalt Strike
+category: Execution
+operator: any
+signatures:
+- postex_
+- status_
+- msagent_
+- MSSE-
+- \-server
+- mojo.5688.8052.183894939787088877
+- mojo.5688.8052.35780273329370473
+- wkssvc
+- ntsvcs
+- DserNamePipe
+- SearchTextHarvester
+- scerpc
+- mypipe-
+- windows.update.manager

@@ -1,0 +1,11 @@
+detection: Execution Technique - Cobalt Strike Default DNS C2 Behavior
+source: Event Logs
+id: "22"
+filename: "Microsoft-Windows-Sysmon"
+tags: Execution,Cobalt Strike
+category: Execution
+operator: any
+signatures:
+- aaa.stage
+- post.1
+- stage.123456

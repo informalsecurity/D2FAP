@@ -1,0 +1,9 @@
+detection: Execution Technique - Possible Cobalt Strike Detected by Sysmon
+source: Event Logs
+id: "1,8,11,23"
+filename: "Microsoft-Windows-Sysmon"
+tags: Execution,Cobalt Strike
+category: Execution
+operator: any
+signatures:
+- Possible Cobalt Strike
