@@ -1,0 +1,11 @@
+detection: Cobalt Strike Privilege Escalation Techniques 
+source: Event Logs
+id: "1,25"
+filename: "Microsoft-Windows-Sysmon"
+tags: Privilege Escalation
+category: Privilege Escalation
+operator: all
+signatures:
+- 127.0.0.1
+- rundll32.exe
+- ADMIN

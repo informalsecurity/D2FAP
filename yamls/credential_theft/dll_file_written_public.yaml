@@ -6,5 +6,6 @@ tags: Credential Theft,Dropped to Disk,Hands on Keyboard
 category: Credential Theft
 operator: all
 signatures:
-- Users\Public
+- Users
+- Public
 - .dll

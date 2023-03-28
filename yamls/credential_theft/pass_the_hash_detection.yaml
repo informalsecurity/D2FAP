@@ -1,0 +1,11 @@
+detection: Credential Theft Lateral Movement Technique - Pass the Hashin Security Logs
+source: Event Logs
+id: "4624"
+filename: Security.evtx
+tags: Credential Theft,Pass The Hash
+category: Credential Theft
+operator: all
+signatures:
+- 9
+- seclogo
+- Negotiate
