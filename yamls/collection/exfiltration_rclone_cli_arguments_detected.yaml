@@ -1,13 +1,12 @@
-detection: Exfiltration Tool Detected
+detection: Exfiltration Tool RCLONE CLI Arguments Detected
 source: Event Logs
 id: "4688,1,8,11,23"
 filename: "Security.evtx,Microsoft-Windows-Sysmon,MFT"
 tags: Exfiltration
 category: Exfiltration
-operator: any
+operator: all
 signatures:
-- rclone
-- freefilesync
-- megasync
-- WinSCP
-- putty.exe
+- copy
+- ignore-existing
+- auto-confirm
+- transfers

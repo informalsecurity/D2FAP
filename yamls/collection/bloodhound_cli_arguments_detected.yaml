@@ -1,6 +1,6 @@
 detection: Bloodhound CLI Arguments Detected
 source: Event Logs
-id: "4688,1,3,7,10,403,600,400,4100,4104"
+id: "4688,1,8,16,403,600,400,4100,4104"
 filename: "Security.evtx,Microsoft-Windows-Sysmon,Windows PowerShell.evtx,Microsoft-Windows-PowerShell,MFT"
 tags: Collection,Discovery,Privilege Escalation,Bloodhound
 category: Collection
