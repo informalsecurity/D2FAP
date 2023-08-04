@@ -4,7 +4,7 @@ id: "4688,1,8,11,23"
 filename: "Security.evtx,Microsoft-Windows-Sysmon"
 tags: Privilege Escalation
 category: Privilege Escalation
-operator: All
+operator: all
 signatures:
 - cmd
 - echo
