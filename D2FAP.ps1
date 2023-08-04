@@ -281,6 +281,23 @@ $scriptBlock_process_host = {
     $systimeline = $global:final_output + "\system_timelines\"
     $sys_time_fname = $systimeline + $ComputerName + ".csv"  
     $timezone = "HAHA"
+    #Get Processing PC Timezone
+    $proctz = (Get-TimeZone).DisplayName
+    if($proctz -like "*Central Standard Time*"){
+        $proctz_timezone = 6
+    }
+    if($proctz -like "*Eastern Standard Time*"){
+        $proctz_timezone = 5
+    }
+    if($proctz -like "*Mountain*"){
+        $proctz_timezone = 7
+    }
+    if($proctz -like "*Pacific*"){
+        $proctz_timezone = 8
+    }
+    if($proctz -like "*Coordinated Universal Time*"){
+        $proctz_timezone = 0
+    }
     #GET HOST TIME ZONE
     "[$(Get-Date)] $ComputerName - BACKGROUND JOB START" | Out-File $scriptlog -append
     $eid =  "6013"
@@ -289,19 +306,32 @@ $scriptBlock_process_host = {
     if ($temp_det.Count -gt 0) { 
         foreach ($line in $temp_det.Properties) {
             if($line.Value -like "*Central Standard Time*"){
-        		$timezone = 5
+        		$timezone = 6
+                $tz = 'Central Standard Time'
+                $sus_upper = 12
+                $sus_lower = 4
     		}
     		if($line.Value -like "*Eastern Standard Time*"){
-        		$timezone = 4
+        		$timezone = 5
+                $tz = 'Eastern Standard Time'
+                $sus_upper = 11
+                $sus_lower = 3
     		}
     		if($line.Value -like "*Mountain*"){
-        		$timezone = 6
+        		$timezone = 7
+                $sus_upper = 13
+                $sus_lower = 5
     		}
     		if($line.Value -like "*Pacific*"){
-        		$timezone = 7
+        		$timezone = 8
+                $tz = 'Pacific Standard Time'
+                $sus_upper = 14
+                $sus_lower = 6
     		}
             if($line.Value -like "*Coordinated Universal Time*"){
         		$timezone = 0
+                $sus_upper = 6
+                $sus_lower = 0
     		}
         }
     } 
@@ -314,34 +344,73 @@ $scriptBlock_process_host = {
     	    $tz = get-content $file.FullName
             foreach($line in $tz) {
     		    if($line -like "*Central Standard Time*"){
-        		    $timezone = 5
+        		    $timezone = 6
+                $sus_upper = 12
+                $sus_lower = 4
     		    }
     		    if($line -like "*Eastern Standard Time*"){
-        		    $timezone = 4
+        		    $timezone = 5
+                    $sus_upper = 11
+                    $sus_lower = 3
     		    }
     		    if($line -like "*Mountain*"){
-        		    $timezone = 6
+        		    $timezone = 7
+                    $sus_upper = 13
+                    $sus_lower = 5
     		    }
     		    if($line -like "*Pacific*"){
-        		    $timezone = 7
+        		    $timezone = 8
+                    $sus_upper = 14
+                    $sus_lower = 6
     		    }
 		    }
         }
     }
-    if ($timezone -eq 4) {
-    	$timezoneinfo = "US Eastern Standard Time"
-    }
     if ($timezone -eq 5) {
-    	$timezoneinfo = "Central Standard Time"
+    	$timezoneinfo = "US Eastern Standard Time"
+        $tz = 'Eastern Standard Time'
     }
     if ($timezone -eq 6) {
-    	$timezoneinfo = "US Mountain Standard Time"
+    	$timezoneinfo = "Central Standard Time"
+        $tz = 'Central Standard Time'
     }
     if ($timezone -eq 7) {
+    	$timezoneinfo = "US Mountain Standard Time"
+    }
+    if ($timezone -eq 8) {
     	$timezoneinfo = "Pacific Standard Time"
+        $tz = 'Pacific Standard Time'
     }
     if ($timezone -eq 0) {
     	$timezoneinfo = "Coordinated Universal Time"
+    }
+    function Get-Sunday2nd {
+    param(
+        [int]$Year=(Get-Date).Year,
+        [int]$Month=(Get-Date).Month,
+        [switch]$Time)
+        $LastDayPrevMonth = (Get-Date -Year $Year -Month $Month -Day 1).Date.AddDays(-1)
+        $Sunday2nd = $LastDayPrevMonth.AddDays(14-[int]$LastDayPrevMonth.DayOfWeek)
+        $Sunday2nd
+    }
+    function Get-Sunday1st {
+    param(
+        [int]$Year=(Get-Date).Year,
+        [int]$Month=(Get-Date).Month,
+        [switch]$Time)
+        $LastDayPrevMonth = (Get-Date -Year $Year -Month $Month -Day 1).Date.AddDays(-1)
+        $Sunday1st = $LastDayPrevMonth.AddDays(7-[int]$LastDayPrevMonth.DayOfWeek)
+        $Sunday1st
+    }
+    $edt_start = Get-Sunday2nd -Month 3
+    $edt_end = Get-Sunday1st -Month 8
+    $current = Get-Date
+    if (($current -gt $edt_start) -and ($current -lt $edt_end)) {
+        $timezone = $timezone - 1
+        $proctz_timezone = $proctz_timezone - 1
+        $sus_upper = $sus_upper - 1
+        $sus_lower = $sus_lower - 1
+        "[$(Get-Date)] DAYLIGHT SAVINGS TIME IS ON - Making Adjustments (-1)" | Out-File $scriptlog -append
     }
 
     #Initialize investigation variable
@@ -501,8 +570,8 @@ $scriptBlock_process_host = {
                                                 #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - **YAML Engine** - $fname - $det getting added to timeline" | Out-File $scriptlog -append
                                                 $det = $signature.detection
                                                 $det = $det.ToUpper()                                     
-                                                $atime = [datetime]$match.TimeCreated.ToUniversalTime()
-                                                if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+                                                $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezome)
+                                                if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	                                        $det = $det + " - SUSPICIOUS HOURS"
                                                 }
                                                 if ($tfile.Name -like "*Sysmon*") {
@@ -510,8 +579,9 @@ $scriptBlock_process_host = {
                                                 } else {
                                                     $notes = $match.message
                                                 }
+                                                $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezone).ToString("yyyy-MM-ddTHH:mm:ss")
                                                 $output = New-Object -TypeName PSObject
-                                                $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                                $output | add-member NoteProperty "Date" -value $atime
                                                 $output | add-member NoteProperty "System" -value $match.MachineName
                                                 $output | add-member NoteProperty "Detection Type" -value $det
                                                 $output | add-member NoteProperty "Source" -value $fname
@@ -542,8 +612,8 @@ $scriptBlock_process_host = {
                                                 }
                                             }
                                     
-                                            $atime = [datetime]$match.TimeCreated.ToUniversalTime()
-                                            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+                                            $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezome)
+                                            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	                                    $det = $det + " - SUSPICIOUS HOURS"
                                             }
                                             if ($tfile.Name -like "*Sysmon*") {
@@ -551,8 +621,9 @@ $scriptBlock_process_host = {
                                             } else {
                                                 $notes = $match.message
                                             }
+                                            $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezone).ToString("yyyy-MM-ddTHH:mm:ss")
                                             $output = New-Object -TypeName PSObject
-                                            $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                            $output | add-member NoteProperty "Date" -value $atime
                                             $output | add-member NoteProperty "System" -value $match.MachineName
                                             $output | add-member NoteProperty "Detection Type" -value $det
                                             $output | add-member NoteProperty "Source" -value $fname
@@ -576,17 +647,18 @@ $scriptBlock_process_host = {
                                 if ($match.Message -NotLike "*Advanced Threat Protection*") {
                                     $det = $signature.detection
                                     #"[$(Get-Date)] $ComputerName - BACKGROUND JOB - **YAML Engine** - $fname - $det matched EVENT ID condition and getting added to timeline" | Out-File $scriptlog -append
-                                    $atime = [datetime]$match.TimeCreated.ToUniversalTime()
-                                    if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+                                    $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezone)
+                                    if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	                            $det = $det + " - SUSPICIOUS HOURS"
                                     }
+                                    $atime = ([DateTime]$match.TimeCreate).AddHours($proctz_timezone).ToString("yyyy-MM-ddTHH:mm:ss")
                                     if (($match.ProviderName -eq "SentinelOne") -or ($match.ProviderName -eq "Symantec Endpoint Protection Client") -or ($tfile.Name -like "*Sysmon*")) {
                                         $tmessage = $match.Properties.Value -Join [Environment]::NewLine 
                                     } else {
                                         $tmessage = $match.message
                                     }
                                     $output = New-Object -TypeName PSObject
-                                    $output | add-member NoteProperty "Date" -value $match.TimeCreated
+                                    $output | add-member NoteProperty "Date" -value $atime
                                     $output | add-member NoteProperty "System" -value $match.MachineName
                                     $output | add-member NoteProperty "Detection Type" -value $det
                                     $output | add-member NoteProperty "Source" -value $fname
@@ -686,7 +758,8 @@ $scriptBlock_process_host = {
             $tcounter++
             $titem += $item
             if ($tcounter -eq 6) {
-                [datetime]$atime = $titem[0]
+                $atime = $titem[0]
+                $atime = ([DateTime]$atime).AddHours($timezone).ToString("yyyy-MM-ddTHH:mm:ss")
                 $output = New-Object -TypeName PSObject
                 $output | add-member NoteProperty "HostName" -value $system
                 $output | add-member NoteProperty "Action Time" -value $atime
@@ -763,7 +836,7 @@ $scriptBlock_process_host = {
             $timestart = $row.Group.BornTime | Sort -Descending | Select -Last 1
             $atime = ([datetime]$timestart)
             $note = "[" + $row.Count + " Files Detected]"
-            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	    $note = " SUSPICIOUS HOURS"
             }
             $temparr = @()
@@ -774,7 +847,7 @@ $scriptBlock_process_host = {
             $temprow = $row.Group.FullName -Split [Environment]::NewLine
             $temprow = $temprow | select -First 50
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $atime
+            $output | add-member NoteProperty "Date" -value ([DateTime]$atime).ToString("yyyy-MM-ddTHH:mm:ss")
             $output | add-member NoteProperty "System" -value $Hostname
             $output | add-member NoteProperty "Detection Type" -value "POSSIBLE STAGING AREA OBSERVED $note"
             $output | add-member NoteProperty "Source" -value $global:mft_incident.FileName
@@ -799,7 +872,7 @@ $scriptBlock_process_host = {
     foreach ($file in $files) {
         $bhistory = "C:\Temp\BrowsingHistoryView.exe"
         $safeFName = $file.FullName + ".csv"
-        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.ChromeFiles $file.FullName /scomma $safeFName /VisitTimeFilterType 1'
+        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.ChromeFiles $file.FullName /scomma $safeFName /VisitTimeFilterType 1 /ShowTimeInGMT 1'
         Invoke-Command -ScriptBlock ([ScriptBlock]::Create($cmd))
         $history += Import-csv $safeFName
     }
@@ -824,7 +897,8 @@ $scriptBlock_process_host = {
                 if ($entry.URL -like "*$signature*") {
                     $dtype = $yaml.detection + "- " + $signature
                     $output = New-Object -TypeName PSObject
-                    $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+                    $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
+                    $output | add-member NoteProperty "Date" -value $atime
                     $output | add-member NoteProperty "System" -value $system
                     $output | add-member NoteProperty "Detection Type" -value $dtype
                     $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -842,8 +916,9 @@ $scriptBlock_process_host = {
             }
         }
         if (!($added)) {
+            $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
         	$output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $system
             $output | add-member NoteProperty "Detection Type" -value "WEB HISTORY - $note"
             $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -867,7 +942,7 @@ $scriptBlock_process_host = {
     foreach ($file in $files) {
         $bhistory = "C:\Temp\BrowsingHistoryView.exe"
         $safeFName = $file.FullName + ".csv"
-        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.IE10Files $file.FullName /scomma $safeFName /VisitTimeFilterType 1'
+        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.IE10Files $file.FullName /scomma $safeFName /VisitTimeFilterType 1 /ShowTimeInGMT 1'
         Invoke-Command -ScriptBlock ([ScriptBlock]::Create($cmd))
         $history += Import-csv $safeFName
     }
@@ -891,8 +966,9 @@ $scriptBlock_process_host = {
             Foreach ($signature in $yaml.Signatures) {
                 if ($entry.URL -like "*$signature*") {
                     $dtype = $yaml.detection + "- " + $signature
+                    $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
                     $output = New-Object -TypeName PSObject
-                    $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+                    $output | add-member NoteProperty "Date" -value $atime
                     $output | add-member NoteProperty "System" -value $system
                     $output | add-member NoteProperty "Detection Type" -value $dtype
                     $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -910,8 +986,9 @@ $scriptBlock_process_host = {
             }
         }
         if (!($added)) {
+            $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
         	$output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $system
             $output | add-member NoteProperty "Detection Type" -value "WEB HISTORY - $note"
             $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -935,7 +1012,7 @@ $scriptBlock_process_host = {
     foreach ($file in $files) {
         $bhistory = "C:\Temp\BrowsingHistoryView.exe"
         $safeFName = $file.FullName + ".csv"
-        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.FirefoxFiles $file.FullName /scomma $safeFName /VisitTimeFilterType 1'
+        $cmd = 'cmd /c $bhistory /HistorySource 6 /CustomFiles.FirefoxFiles $file.FullName /scomma $safeFName /VisitTimeFilterType 1 /ShowTimeInGMT 1'
         Invoke-Command -ScriptBlock ([ScriptBlock]::Create($cmd))
         $history += Import-csv $safeFName
     }
@@ -959,8 +1036,9 @@ $scriptBlock_process_host = {
             Foreach ($signature in $yaml.Signatures) {
                 if ($entry.URL -like "*$signature*") {
                     $dtype = $yaml.detection + "- " + $signature
+                    $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
                     $output = New-Object -TypeName PSObject
-                    $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+                    $output | add-member NoteProperty "Date" -value $atime
                     $output | add-member NoteProperty "System" -value $system
                     $output | add-member NoteProperty "Detection Type" -value $dtype
                     $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -978,8 +1056,9 @@ $scriptBlock_process_host = {
             }
         }
         if (!($added)) {
+            $atime = ([datetime]$entry.'Visit Time').ToString("yyyy-MM-ddTHH:mm:ss")
         	$output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $entry.'Visit Time'
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $system
             $output | add-member NoteProperty "Detection Type" -value "WEB HISTORY - $note"
             $output | add-member NoteProperty "Source" -value $entry.'History File'
@@ -1026,11 +1105,12 @@ $scriptBlock_process_host = {
         if ((([DateTime]$thing.LastInteracted -gt $global:StartIncidentTime) -and ([DateTime]$thing.LastInteracted -lt $global:EndIncidentTime)) -OR (([DateTime]$thing.LastWriteTime -gt $global:StartIncidentTime) -and ([DateTime]$thing.LastWriteTime -lt $global:EndIncidentTime))) {
             $note = $null
             $atime = [datetime]$thing.LastWriteTime
-            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	    $note = " SUSPICIOUS HOURS"
             }
+            $atime = ([datetime]$thing.LastWriteTime).ToString("yyyy-MM-ddTHH:mm:ss")
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $thing.LastWriteTime
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $system
             $output | add-member NoteProperty "Detection Type" -value "SHELLBAG $note"
             $output | add-member NoteProperty "Source" -value "NTUSER.DAT"
@@ -1052,22 +1132,23 @@ $scriptBlock_process_host = {
     foreach ($file in $HIVE_FILES) {
         $username = ($file.Name -Split "_")[0]
         try {
-            $userassist = Get-ForensicUserAssist -HivePath $file.FullName | Where-Object {(($_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
+            $userassist = Get-ForensicUserAssist -HivePath $file.FullName | Where-Object {(([datetime]$_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ([datetime]$_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
         } catch {
             $tname = -Join (@('a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','s','t','u','v','w','x','y','z','1','2','3','4','5','6','7','8','9','0','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z') | Get-Random -Count 12) 
             $dest = "C:\Temp\$tname.reg"
             copy-item $file.FullName $dest
-            $userassist = Get-ForensicUserAssist -HivePath $dest | Where-Object {(($_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ($_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
+            $userassist = Get-ForensicUserAssist -HivePath $dest | Where-Object {(([datetime]$_.LastExecutionTimeUtc -gt $global:StartIncidentTime) -and ([datetime]$_.LastExecutionTimeUtc -lt $global:EndIncidentTime))}
             Remove-Item $dest
         }
         foreach ($item in $userassist) {
             $note = $null
             $atime = [datetime]$item.LastExecutionTimeUtc
-            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	    $note = " SUSPICIOUS HOURS"
             }
+            $atime = ([datetime]$item.LastExecutionTimeUtc).ToString("yyyy-MM-ddTHH:mm:ss")
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $item.LastExecutionTimeUtc.AddHours(-$timezone)
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $system
             $output | add-member NoteProperty "Detection Type" -value "USER ASSIST / PROGRAM RUN $note"
             $output | add-member NoteProperty "Source" -value $file.Name
@@ -1089,7 +1170,7 @@ $scriptBlock_process_host = {
     $outputfile = $folder.FullName + "\amcache.csv"
     foreach ($file in $amfile) {
         try {
-            $amcache = Get-ForensicAmcache -HivePath $file.FullName | Where-Object {(($_.ModifiedTime2Utc -gt $global:StartIncidentTime) -and ($_.ModifiedTime2Utc -lt $global:EndIncidentTime))}
+            $amcache = Get-ForensicAmcache -HivePath $file.FullName | Where-Object {(([datetime]$_.ModifiedTime2Utc -gt $global:StartIncidentTime) -and ([datetime]$_.ModifiedTime2Utc -lt $global:EndIncidentTime))}
             #c:\Temp\AmcacheParser.exe -f $file.FullName -i --csv $folder.FullName --csvf amcache.csv
         } catch {
             
@@ -1102,11 +1183,12 @@ $scriptBlock_process_host = {
         foreach ($item in $amcache) {
             $note = $null
             $atime = [datetime]$item.ModifiedTime2Utc
-            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	    $note = " SUSPICIOUS HOURS"
             }
+            $atime = ([datetime]$item.ModifiedTime2Utc).ToString("yyyy-MM-ddTHH:mm:ss")
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $item.ModifiedTime2Utc
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $ComputerName
             $output | add-member NoteProperty "Detection Type" -value "AMCACHE / PROGRAM RUN $note"
             $output | add-member NoteProperty "Source" -value $file.FullName
@@ -1138,14 +1220,15 @@ $scriptBlock_process_host = {
         if ($include) {
             $note = $null
             $atime = [datetime]$event."Action Time"
-            if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+            if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
                 $note = " SUSPICIOUS HOURS"
             }
             $deets = $event -Join [Environment]::NewLine | Out-String
             $des = $null
             $des = $event.Description + " " + $note
+            $atime = ([datetime]$event."Action Time").AddHours($timezone).ToString("yyyy-MM-ddTHH:mm:ss")
             $output = New-Object -TypeName PSObject
-            $output | add-member NoteProperty "Date" -value $event."Action Time"
+            $output | add-member NoteProperty "Date" -value $atime
             $output | add-member NoteProperty "System" -value $event.HostName
             $output | add-member NoteProperty "Detection Type" -value $des
             $output | add-member NoteProperty "Source" -value "Last Activity Report - HTML" 
@@ -1202,7 +1285,7 @@ $scriptBlock_process_host = {
     	            $output = New-Object -TypeName PSObject
                     $atime = [datetime]$entry."BornTime"
                     $note = $null
-                    if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+                    if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	            $note = " SUSPICIOUS HOURS"
                     }
                     if ($note -ne $null) {
@@ -1210,6 +1293,7 @@ $scriptBlock_process_host = {
                     } else {
                         $dtype = $yaml.detection + " - $signature"
                     }
+                    $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
                     $output | add-member NoteProperty "Date" -value $atime
                     $output | add-member NoteProperty "System" -value $ComputerName
                     $output | add-member NoteProperty "Detection Type" -value $dtype
@@ -1244,7 +1328,7 @@ $scriptBlock_process_host = {
     	        $output = New-Object -TypeName PSObject
                 $atime = [datetime]$entry."BornTime"
                 $note = $null
-                if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+                if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	        $note = " SUSPICIOUS HOURS"
                 }
                 if ($note -ne $null) {
@@ -1252,6 +1336,7 @@ $scriptBlock_process_host = {
                 } else {
                     $dtype = $yaml.detection
                 }
+                $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
                 $output | add-member NoteProperty "Date" -value $atime
                 $output | add-member NoteProperty "System" -value $ComputerName
                 $output | add-member NoteProperty "Detection Type" -value $dtype
@@ -1286,9 +1371,10 @@ $scriptBlock_process_host = {
     	$output = New-Object -TypeName PSObject
         $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	$note = " SUSPICIOUS HOURS"
         }
+        $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
         $output | add-member NoteProperty "Date" -value $atime
         $output | add-member NoteProperty "System" -value $ComputerName
         $output | add-member NoteProperty "Detection Type" -value "POSSIBLE BLOODHOUND OUTPUT DETECTED - $note"
@@ -1314,9 +1400,10 @@ $scriptBlock_process_host = {
     	$output = New-Object -TypeName PSObject
         $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	$note = " SUSPICIOUS HOURS"
         }
+        $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
         $output | add-member NoteProperty "Date" -value $atime
         $output | add-member NoteProperty "System" -value $ComputerName
         $output | add-member NoteProperty "Detection Type" -value "POSSIBLE STAGING/EXFIL - Archive File Created $note"
@@ -1342,9 +1429,10 @@ $scriptBlock_process_host = {
         $output = New-Object -TypeName PSObject
         $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	$note = " SUSPICIOUS HOURS"
         }
+        $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
         $output | add-member NoteProperty "Date" -value $atime
         $output | add-member NoteProperty "System" -value $ComputerName
         $output | add-member NoteProperty "Detection Type" -value "Compromised Account Profile File Activity $note"
@@ -1368,9 +1456,10 @@ $scriptBlock_process_host = {
         $output = New-Object -TypeName PSObject
         $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	$note = " SUSPICIOUS HOURS"
         }
+        $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
         $output | add-member NoteProperty "Date" -value $atime
         $output | add-member NoteProperty "System" -value $ComputerName
         $output | add-member NoteProperty "Detection Type" -value "BINARY DROPPED in Compromised User Profile $note"
@@ -1392,7 +1481,7 @@ $scriptBlock_process_host = {
     foreach ($entry in $global:list_files.mft) {
         $atime = [datetime]$entry."BornTime"
         $note = $null
-        if (($atime.hour -lt 10) -or ($atime.hour -gt 2)) {
+        if (($atime.hour -lt $sus_upper) -or ($atime.hour -gt $sus_lower)) {
         	$note = " SUSPICIOUS HOURS"
         }
         if ($global:fnames.Contains($entry.Name.ToUpper())) {
@@ -1400,6 +1489,7 @@ $scriptBlock_process_host = {
         } else {
             $dtype = "Interesting File Activity - File Create Near Time of known IOC $note"
         }
+        $atime = ([datetime]$entry."BornTime").ToString("yyyy-MM-ddTHH:mm:ss")
         $output = New-Object -TypeName PSObject
         $output | add-member NoteProperty "Date" -value $atime
         $output | add-member NoteProperty "System" -value $ComputerName
