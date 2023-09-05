@@ -1,0 +1,9 @@
+detection: Network Intrusion Detection - Symantec Endpoint Protection
+source: Event Logs
+id: "400"
+filename: Application.evtx
+tags: Malware,Tools,Detected
+category: Execution
+operator: all
+signatures:
+- SID
