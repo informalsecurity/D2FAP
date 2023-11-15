@@ -1,6 +1,6 @@
 detection: ScreenConnect Incoming Connection
 source: Event Logs
-id: 0
+id: 100
 filename: Application.evtx
 tags: Lateral Movement,ScreenConnect
 category: Lateral Movement
