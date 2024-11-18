@@ -1,0 +1,12 @@
+detection: Privilege Escalation UAC Bypass
+source: Event Logs
+id: "1,8,11,23"
+filename: "Microsoft-Windows-Sysmon"
+tags: Execution,PrivEsc
+category: Execution,PrivEsc
+operator: all
+signatures:
+- reg.exe
+- add
+- ms-settings
+- DelegateExecute
